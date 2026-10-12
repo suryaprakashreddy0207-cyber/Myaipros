@@ -1,0 +1,6 @@
+{
+  "name": "Myaipro11",
+  "description": "Chat, generate and edit images, and speak with My AI — a single unified assistant.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

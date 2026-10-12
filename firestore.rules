@@ -1,0 +1,73 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+
+    // Test connection check
+    match /test/{docId} {
+      allow read: if true;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && isValidId(userId);
+      allow update: if isOwner(userId) && incoming().id == existing().id;
+      allow delete: if false;
+    }
+
+    match /threads/{threadId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(threadId) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == existing().userId;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /threads/{threadId}/messages/{messageId} {
+      allow get: if isSignedIn() && get(/databases/$(database)/documents/threads/$(threadId)).data.userId == request.auth.uid;
+      allow list: if isSignedIn() && get(/databases/$(database)/documents/threads/$(threadId)).data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(messageId) &&
+        get(/databases/$(database)/documents/threads/$(threadId)).data.userId == request.auth.uid &&
+        incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() &&
+        get(/databases/$(database)/documents/threads/$(threadId)).data.userId == request.auth.uid &&
+        existing().userId == request.auth.uid;
+      allow delete: if isSignedIn() &&
+        get(/databases/$(database)/documents/threads/$(threadId)).data.userId == request.auth.uid;
+    }
+
+    match /presentations/{presentationId} {
+      allow get: if resource.data.published == true || (isSignedIn() && existing().userId == request.auth.uid);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(presentationId) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == existing().userId;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /projects/{projectId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid || existing().isShared == true);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(projectId) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && (existing().userId == request.auth.uid || existing().isShared == true);
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /projects/{projectId}/messages/{messageId} {
+      allow get, list, create, update, delete: if true;
+    }
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

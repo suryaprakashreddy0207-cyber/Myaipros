@@ -1,0 +1,104 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profile",
+      "description": "User profile document storing basic user details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "email"]
+    },
+    "threads": {
+      "title": "Chat Thread",
+      "description": "Conversation threads created by users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "userId"]
+    },
+    "messages": {
+      "title": "Chat Message",
+      "description": "Individual messages within a chat thread",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "threadId": { "type": "string" },
+        "userId": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "assistant", "system"] },
+        "content": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "threadId", "userId", "role", "content"]
+    },
+    "presentations": {
+      "title": "Presentation",
+      "description": "AI-generated slide decks and presentations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "topic": { "type": "string" },
+        "slides": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "published": { "type": "boolean" },
+        "publishedTitle": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title"]
+    },
+    "projects": {
+      "title": "Project",
+      "description": "User projects organizing chats, files, Google Drive, Sheets and Gmail sources",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "instructions": { "type": "string" },
+        "category": { "type": "string" },
+        "sharedWith": { "type": "array", "items": { "type": "string" } },
+        "isShared": { "type": "boolean" },
+        "sources": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "users",
+      "description": "User profiles collection"
+    },
+    "/threads/{threadId}": {
+      "schema": "threads",
+      "description": "Chat threads collection"
+    },
+    "/threads/{threadId}/messages/{messageId}": {
+      "schema": "messages",
+      "description": "Messages subcollection per thread"
+    },
+    "/presentations/{presentationId}": {
+      "schema": "presentations",
+      "description": "Presentations collection"
+    },
+    "/projects/{projectId}": {
+      "schema": "projects",
+      "description": "Projects collection for chats and sources"
+    }
+  }
+}
