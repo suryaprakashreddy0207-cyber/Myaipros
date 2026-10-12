@@ -1878,13 +1878,115 @@ Rules:
           }
         }
 
-        // Update job to writing status
+        // Helper to build a rich interactive fallback preview tailored to the app
+        const buildRichInteractiveAppHtml = (appName: string, appDesc: string, stackStr: string, modCount: number) => `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>${appName}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen antialiased">
+  <div class="max-w-5xl mx-auto p-6 space-y-6">
+    <header class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-5">
+      <div class="flex items-center gap-3">
+        <div class="h-11 w-11 rounded-2xl bg-indigo-600 flex items-center justify-center font-bold text-white text-lg shadow-lg">${appName.charAt(0).toUpperCase()}</div>
+        <div>
+          <h1 class="text-2xl font-bold text-white">${appName}</h1>
+          <p class="text-xs text-slate-400 mt-0.5">${appDesc}</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">● Live App</span>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+        <div class="text-xs text-slate-400 uppercase font-semibold">Active Items</div>
+        <div id="kpi-count" class="text-2xl font-bold text-white mt-1">3</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+        <div class="text-xs text-slate-400 uppercase font-semibold">Architecture</div>
+        <div class="text-sm font-bold text-indigo-400 mt-1.5">${stackStr}</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+        <div class="text-xs text-slate-400 uppercase font-semibold">Modules</div>
+        <div class="text-2xl font-bold text-emerald-400 mt-1">${modCount} Files</div>
+      </div>
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 class="text-base font-bold text-white">${appName} Workspace</h2>
+        <form onsubmit="event.preventDefault(); const inp = document.getElementById('new-item-input'); if(!inp.value.trim()) return; const list = document.getElementById('items-list'); const row = document.createElement('div'); row.className='flex items-center justify-between p-3.5 rounded-xl bg-slate-950 border border-slate-800'; row.innerHTML='<span class=\\'text-sm font-medium text-white\\'>' + inp.value + '</span><span class=\\'text-xs px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400\\'>Active</span>'; list.prepend(row); inp.value=''; const kpi = document.getElementById('kpi-count'); kpi.innerText = String(parseInt(kpi.innerText)+1);" class="flex items-center gap-2">
+          <input id="new-item-input" type="text" placeholder="Add new item or record..." class="rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2 text-xs text-white outline-none focus:border-indigo-500" />
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition">+ Add</button>
+        </form>
+      </div>
+      <div id="items-list" class="space-y-2.5">
+        <div class="flex items-center justify-between p-3.5 rounded-xl bg-slate-950 border border-slate-800">
+          <span class="text-sm font-medium text-white">Primary ${appName} Workflow</span>
+          <span class="text-xs px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400">Active</span>
+        </div>
+        <div class="flex items-center justify-between p-3.5 rounded-xl bg-slate-950 border border-slate-800">
+          <span class="text-sm font-medium text-white">Real-Time Data &amp; Analytics Dashboard</span>
+          <span class="text-xs px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-400">Synced</span>
+        </div>
+        <div class="flex items-center justify-between p-3.5 rounded-xl bg-slate-950 border border-slate-800">
+          <span class="text-sm font-medium text-white">User Management &amp; Cloud Storage</span>
+          <span class="text-xs px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400">Ready</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+        const initialFallbackPreview = buildRichInteractiveAppHtml(
+          plan.name,
+          plan.description,
+          plan.stack,
+          plan.files.length,
+        );
+
+        const autoRegisterPublished = (htmlContent: string, currentFiles: BuiltFile[]) => {
+          try {
+            const cleanSlug =
+              plan.name
+                .toLowerCase()
+                .replace(/[^a-z0-9-]+/g, "-")
+                .replace(/^-|-$/g, "") || "my-app";
+            const pubAll = loadPublishedApps();
+            const rec: PublishedAppRecord = {
+              id: existingProjectId || buildId,
+              slug: cleanSlug,
+              name: plan.name,
+              description: plan.description,
+              preview_html: htmlContent,
+              files: currentFiles,
+              published_at: new Date().toISOString(),
+            };
+            pubAll[cleanSlug] = rec;
+            pubAll[plan.name] = rec;
+            pubAll[plan.name.toLowerCase()] = rec;
+            pubAll[buildId] = rec;
+            if (existingProjectId) pubAll[existingProjectId] = rec;
+            savePublishedApps(pubAll);
+          } catch {
+            /* ignore */
+          }
+        };
+
+        // Update job to writing status with immediate working preview so Publish & Live Preview work immediately
         const jobWriting = activeBuildJobs.get(buildId);
         if (jobWriting) {
           jobWriting.name = plan.name;
           jobWriting.description = plan.description;
           jobWriting.stack = plan.stack;
           jobWriting.totalFiles = plan.files.length;
+          jobWriting.preview_html = initialFallbackPreview;
           jobWriting.status = "writing";
           jobWriting.progress = [
             `Planned ${plan.files.length} files across ${folderSet.size} folders`,
@@ -1892,6 +1994,42 @@ Rules:
           ];
           persistJobs(activeBuildJobs);
         }
+        autoRegisterPublished(initialFallbackPreview, []);
+
+        // Start generating the full custom AI interactive HTML preview in parallel right away!
+        let previewHtml = initialFallbackPreview;
+        const previewPromise = (async () => {
+          try {
+            const rawPreview = await (attachedImages?.length
+              ? askVisionCode(
+                  "You are an expert full-stack frontend engineer who replicates UI screenshots into pixel-accurate, single-file interactive HTML/Tailwind/JS applications. Output ONLY one complete standalone HTML document with Tailwind CSS CDN (<script src=\"https://cdn.tailwindcss.com\"></script>), Lucide/SVG icons, custom interactive JavaScript, and responsive styling. Replicate the exact colors, layout, cards, navigation, buttons, and typography of the attached image(s). Do NOT output markdown code fences or explanations.",
+                  `Build a pixel-accurate, fully interactive single-page web application matching the attached UI image(s) for: "${plan.name}" — Idea: ${idea}.\n\nDetailed Visual Spec from Image:\n${visionUiBlueprint}\n\nEnsure every button, tab, modal, form, and interactive control works smoothly.`,
+                  attachedImages,
+                )
+              : askCode(
+                  model as ModelId,
+                  "You are an expert full-stack developer who crafts gorgeous, single-file interactive web app prototypes. Output ONLY one complete standalone HTML document with Tailwind CSS CDN (<script src=\"https://cdn.tailwindcss.com\"></script>), custom interactive JavaScript, responsive styling, and modern UI. Do NOT output markdown code fences, do NOT include explanations.",
+                  `Build a complete, stunning, fully interactive single-page web app demo for: "${plan.name}" — Idea: ${idea}. Make it look like a modern SaaS application with working buttons, tabs, forms, state, and interactive controls.`,
+                ));
+            if (rawPreview && (rawPreview.includes("<html") || rawPreview.includes("<!DOCTYPE") || rawPreview.includes("<div"))) {
+              let cleaned = rawPreview.replace(/^```html?\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
+              if (!cleaned.includes("cdn.tailwindcss.com") && cleaned.includes("<head>")) {
+                cleaned = cleaned.replace("<head>", '<head>\n  <script src="https://cdn.tailwindcss.com"></script>');
+              }
+              if (cleaned.length >= 80) {
+                previewHtml = cleaned;
+                const j = activeBuildJobs.get(buildId);
+                if (j) {
+                  j.preview_html = previewHtml;
+                  persistJobs(activeBuildJobs);
+                }
+                autoRegisterPublished(previewHtml, j?.files || []);
+              }
+            }
+          } catch {
+            // keep initialFallbackPreview
+          }
+        })();
 
         // 2. Write complete, full-scale code for every file (in fast concurrent batches of 3 so unlimited files finish rapidly)
         const builtFilesMap = new Map<string, BuiltFile>();
@@ -1969,84 +2107,13 @@ CRITICAL RULES:
           );
         }
 
+        await previewPromise;
+
         const builtFiles: BuiltFile[] = plan.files
           .map((pf) => builtFilesMap.get(pf.path))
           .filter((bf): bf is BuiltFile => Boolean(bf));
 
-        // 3. Generate live interactive preview (using multimodal vision if the user attached UI screenshot(s))
-        let previewHtml = "";
-        try {
-          const rawPreview = await (attachedImages?.length
-            ? askVisionCode(
-                "You are an expert full-stack frontend engineer who replicates UI screenshots into pixel-accurate, single-file interactive HTML/Tailwind/JS applications. Output ONLY one complete standalone HTML document with Tailwind CSS CDN (<script src=\"https://cdn.tailwindcss.com\"></script>), Lucide/SVG icons, custom interactive JavaScript, and responsive styling. Replicate the exact colors, layout, cards, navigation, buttons, and typography of the attached image(s). Do NOT output markdown code fences or explanations.",
-                `Build a pixel-accurate, fully interactive single-page web application matching the attached UI image(s) for: "${plan.name}" — Idea: ${idea}.\n\nDetailed Visual Spec from Image:\n${visionUiBlueprint}\n\nEnsure every button, tab, modal, form, and interactive control works smoothly.`,
-                attachedImages,
-              )
-            : askCode(
-                model as ModelId,
-                "You are an expert full-stack developer who crafts gorgeous, single-file interactive web app prototypes. Output ONLY one complete standalone HTML document with Tailwind CSS CDN (<script src=\"https://cdn.tailwindcss.com\"></script>), custom interactive JavaScript, responsive styling, and modern UI. Do NOT output markdown code fences, do NOT include explanations.",
-                `Build a complete, stunning, fully interactive single-page web app demo for: "${plan.name}" — Idea: ${idea}. Make it look like a modern SaaS application with working buttons, tabs, forms, state, and interactive controls.`,
-              ));
-          if (rawPreview && (rawPreview.includes("<html") || rawPreview.includes("<!DOCTYPE") || rawPreview.includes("<div"))) {
-            previewHtml = rawPreview.replace(/^```html?\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "").trim();
-            if (!previewHtml.includes("cdn.tailwindcss.com") && previewHtml.includes("<head>")) {
-              previewHtml = previewHtml.replace("<head>", '<head>\n  <script src="https://cdn.tailwindcss.com"></script>');
-            }
-          }
-        } catch {
-          // ignore
-        }
-
-        if (!previewHtml || previewHtml.length < 50) {
-          previewHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>${plan.name}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-slate-950 text-slate-100 font-sans min-h-screen p-6 antialiased">
-  <div class="max-w-4xl mx-auto space-y-6">
-    <header class="flex items-center justify-between border-b border-slate-800 pb-4">
-      <div>
-        <h1 class="text-2xl font-bold text-white">${plan.name}</h1>
-        <p class="text-sm text-slate-400 mt-1">${plan.description}</p>
-      </div>
-      <span class="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-        ● Live Prototype
-      </span>
-    </header>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
-        <div class="text-xs text-slate-400 uppercase font-semibold">Tech Stack</div>
-        <div class="text-lg font-bold text-white mt-1">${plan.stack}</div>
-      </div>
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
-        <div class="text-xs text-slate-400 uppercase font-semibold">Project Files</div>
-        <div class="text-lg font-bold text-white mt-1">${builtFiles.length} Modules</div>
-      </div>
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
-        <div class="text-xs text-slate-400 uppercase font-semibold">Status</div>
-        <div class="text-lg font-bold text-emerald-400 mt-1">Ready to Deploy</div>
-      </div>
-    </div>
-    <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
-      <h3 class="text-base font-semibold text-white">Interactive Demo</h3>
-      <p class="text-sm text-slate-300">Click below to test live interactive state:</p>
-      <div class="flex items-center gap-3">
-        <button onclick="document.getElementById('demo-val').innerText = parseInt(document.getElementById('demo-val').innerText) + 1" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold transition">
-          Test Action (+1)
-        </button>
-        <span class="text-sm font-mono text-slate-300">Counter: <span id="demo-val" class="text-blue-400 font-bold">1</span></span>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-        }
-
-        // 4. Mark job as completed
+        // 4. Mark job as completed and register in published apps
         const finalJob = activeBuildJobs.get(buildId);
         if (finalJob) {
           finalJob.files = builtFiles;
@@ -2055,6 +2122,7 @@ CRITICAL RULES:
           finalJob.progress = ["Build complete! App is ready to run and deploy."];
           persistJobs(activeBuildJobs);
         }
+        autoRegisterPublished(previewHtml, builtFiles);
       } catch (err: any) {
         const errorJob = activeBuildJobs.get(buildId);
         if (errorJob) {

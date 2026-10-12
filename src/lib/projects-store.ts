@@ -7,11 +7,8 @@ import {
   setDoc,
   deleteDoc,
   updateDoc,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
 } from "firebase/firestore";
+import { getActiveUserSession, getActiveUserStorageKey } from "@/lib/user-session";
 
 export interface ProjectSource {
   id: string;
@@ -48,8 +45,18 @@ export interface ProjectItem {
 const LOCAL_STORAGE_PROJECTS_KEY = "myaipro_projects_v1";
 const LOCAL_STORAGE_PROJECT_MSGS_PREFIX = "myaipro_project_msgs_";
 
+function getProjectsStorageKey(): string {
+  return getActiveUserStorageKey(LOCAL_STORAGE_PROJECTS_KEY);
+}
+
+function getProjectMsgsStorageKey(projectId: string): string {
+  return getActiveUserStorageKey(`${LOCAL_STORAGE_PROJECT_MSGS_PREFIX}${projectId}`);
+}
+
 // Get current active user ID (or persistent guest fallback)
 export function getCurrentUserId(): string {
+  const session = getActiveUserSession();
+  if (session?.uid) return session.uid;
   if (typeof window !== "undefined" && auth.currentUser) {
     return auth.currentUser.uid;
   }
@@ -65,6 +72,8 @@ export function getCurrentUserId(): string {
 }
 
 export function getCurrentUserEmail(): string {
+  const session = getActiveUserSession();
+  if (session?.email) return session.email.toLowerCase();
   if (typeof window !== "undefined" && auth.currentUser?.email) {
     return auth.currentUser.email.toLowerCase();
   }
@@ -75,8 +84,24 @@ export function getCurrentUserEmail(): string {
 export function getLocalProjects(): ProjectItem[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_PROJECTS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const key = getProjectsStorageKey();
+    const raw = localStorage.getItem(key);
+    if (raw !== null) {
+      return JSON.parse(raw);
+    }
+    // For returning users, migrate legacy global projects if present
+    const session = getActiveUserSession();
+    if (session && !session.isNewUser) {
+      const legacy = localStorage.getItem(LOCAL_STORAGE_PROJECTS_KEY);
+      if (legacy) {
+        const parsed = JSON.parse(legacy);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          localStorage.setItem(key, JSON.stringify(parsed));
+          return parsed;
+        }
+      }
+    }
+    return [];
   } catch {
     return [];
   }
@@ -85,7 +110,8 @@ export function getLocalProjects(): ProjectItem[] {
 export function saveLocalProjects(projects: ProjectItem[]) {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(LOCAL_STORAGE_PROJECTS_KEY, JSON.stringify(projects));
+    const key = getProjectsStorageKey();
+    localStorage.setItem(key, JSON.stringify(projects));
     window.dispatchEvent(new CustomEvent("myaipro_projects_updated", { detail: projects }));
   } catch {
     // ignore
@@ -95,8 +121,17 @@ export function saveLocalProjects(projects: ProjectItem[]) {
 export function getLocalProjectMessages(projectId: string): ProjectChatMessage[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(`${LOCAL_STORAGE_PROJECT_MSGS_PREFIX}${projectId}`);
-    return raw ? JSON.parse(raw) : [];
+    const key = getProjectMsgsStorageKey(projectId);
+    const raw = localStorage.getItem(key);
+    if (raw !== null) {
+      return JSON.parse(raw);
+    }
+    const session = getActiveUserSession();
+    if (session && !session.isNewUser) {
+      const legacy = localStorage.getItem(`${LOCAL_STORAGE_PROJECT_MSGS_PREFIX}${projectId}`);
+      if (legacy) return JSON.parse(legacy);
+    }
+    return [];
   } catch {
     return [];
   }
@@ -106,7 +141,7 @@ export function saveLocalProjectMessages(projectId: string, msgs: ProjectChatMes
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(
-      `${LOCAL_STORAGE_PROJECT_MSGS_PREFIX}${projectId}`,
+      getProjectMsgsStorageKey(projectId),
       JSON.stringify(msgs),
     );
   } catch {
@@ -117,6 +152,11 @@ export function saveLocalProjectMessages(projectId: string, msgs: ProjectChatMes
 // Fetch all projects (Local first, synced with Firestore with timeout protection)
 export async function fetchProjects(): Promise<ProjectItem[]> {
   const local = getLocalProjects();
+  const session = getActiveUserSession();
+  // If user is brand new and has no local projects yet, do not pull global legacy projects
+  if (session?.isNewUser && local.length === 0) {
+    return [];
+  }
 
   const firestoreSync = async (): Promise<ProjectItem[]> => {
     try {

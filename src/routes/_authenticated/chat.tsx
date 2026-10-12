@@ -26,6 +26,12 @@ import {
   type LocalThread,
 } from "@/lib/chat-store";
 import {
+  getActiveUserSession,
+  clearActiveUserSession,
+  type AppUserSession,
+} from "@/lib/user-session";
+import { disconnectGoogleWorkspace } from "@/lib/google-auth";
+import {
   Plus,
   Menu,
   LogOut,
@@ -87,46 +93,63 @@ function ChatLayout() {
   });
 
   const [localThreadsState, setLocalThreadsState] = useState<LocalThread[]>([]);
+  const [activeUser, setActiveUser] = useState<AppUserSession | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  // Load and sync local threads after mount
+  // Load and sync local threads after mount and when user logs in/out
   useEffect(() => {
     setMounted(true);
-    const stored = getLocalThreads();
-    setLocalThreadsState(stored);
-  }, []);
+    function syncForUser() {
+      const sess = getActiveUserSession();
+      setActiveUser(sess);
+      const stored = getLocalThreads();
+      setLocalThreadsState(stored);
+    }
+    syncForUser();
+    window.addEventListener("myaipro_auth_changed", syncForUser);
+    return () => window.removeEventListener("myaipro_auth_changed", syncForUser);
+  }, [location]);
 
-  // Merge server and local threads into a deduplicated list
+  // Merge server and local threads into a deduplicated list (only merge server threads for returning users)
   const allThreads = useMemo(() => {
     const map = new Map<string, LocalThread>();
 
-    // Add local threads first
+    // Add user-scoped local threads first
     for (const lt of localThreadsState) {
       if (lt.id && lt.id !== "default") {
         map.set(lt.id, lt);
       }
     }
 
-    // Merge server threads
-    for (const st of serverThreads as any[]) {
-      if (st.id && st.id !== "default") {
-        const existing = map.get(st.id);
-        map.set(st.id, {
-          id: st.id,
-          title: existing?.title && existing.title !== "New conversation" ? existing.title : (st.title || "New conversation"),
-          first_prompt: existing?.first_prompt || "",
-          last_message: st.last_message || existing?.last_message || "",
-          updated_at: st.updated_at || existing?.updated_at || new Date().toISOString(),
-          created_at: st.created_at || existing?.created_at || new Date().toISOString(),
-          message_count: existing?.message_count || 0,
-        });
+    // Only merge server threads if the user is NOT a brand-new user with empty history
+    if (!activeUser?.isNewUser) {
+      for (const st of serverThreads as any[]) {
+        if (st.id && st.id !== "default") {
+          const existing = map.get(st.id);
+          if (existing || !activeUser) {
+            map.set(st.id, {
+              id: st.id,
+              title:
+                existing?.title && existing.title !== "New conversation"
+                  ? existing.title
+                  : st.title || "New conversation",
+              first_prompt: existing?.first_prompt || "",
+              last_message: st.last_message || existing?.last_message || "",
+              updated_at:
+                st.updated_at || existing?.updated_at || new Date().toISOString(),
+              created_at:
+                st.created_at || existing?.created_at || new Date().toISOString(),
+              message_count: existing?.message_count || 0,
+            });
+          }
+        }
       }
     }
 
     return Array.from(map.values()).sort(
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
     );
-  }, [serverThreads, localThreadsState]);
+  }, [serverThreads, localThreadsState, activeUser]);
 
   // Save merged threads
   useEffect(() => {
@@ -253,6 +276,8 @@ function ChatLayout() {
   async function handleSignOut() {
     await qc.cancelQueries();
     qc.clear();
+    clearActiveUserSession();
+    disconnectGoogleWorkspace();
     try {
       await signOut(auth);
     } catch {
@@ -263,6 +288,7 @@ function ChatLayout() {
     } catch {
       // ignore
     }
+    toast.success("Signed out of your account");
     navigate({ to: "/auth", replace: true });
   }
 
@@ -296,14 +322,17 @@ function ChatLayout() {
       >
         {/* Drawer Header */}
         <div className="flex items-center justify-between p-4 border-b border-border/50">
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-brand text-brand-foreground font-serif font-bold text-base shadow-sm">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand text-brand-foreground font-serif font-bold text-base shadow-sm">
               M
             </div>
-            <div>
+            <div className="min-w-0">
               <h2 className="font-serif text-lg font-semibold text-ink leading-tight">My AI Pro</h2>
-              <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                <History className="size-3" /> Chat History
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1 truncate">
+                <History className="size-3 shrink-0" />
+                <span className="truncate">
+                  {activeUser ? activeUser.email : "Chat History"}
+                </span>
               </p>
             </div>
           </div>

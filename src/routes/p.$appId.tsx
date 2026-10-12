@@ -19,6 +19,9 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { getPublishedApp } from "@/lib/builder.functions";
+import { getActiveUserStorageKey } from "@/lib/user-session";
+import { db } from "@/lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 
 export const Route = createFileRoute("/p/$appId")({
   head: ({ params }) => ({
@@ -80,11 +83,18 @@ export function PublicLiveAppPage() {
         }
       }
 
-      // 2. Try build history ("myaibro.builds")
+      // 2. Try per-user build history and legacy build history
       if (!resolvedLocal) {
-        const buildsRaw = localStorage.getItem("myaibro.builds");
-        if (buildsRaw) {
+        const candidateKeys = [
+          getActiveUserStorageKey("myaibro_builds_v2"),
+          "myaibro.builds",
+          ...Object.keys(localStorage).filter((k) => k.startsWith("myaibro_builds_v2")),
+        ];
+        for (const key of candidateKeys) {
+          const buildsRaw = localStorage.getItem(key);
+          if (!buildsRaw) continue;
           const parsedBuilds = JSON.parse(buildsRaw);
+          if (!Array.isArray(parsedBuilds)) continue;
           const match = parsedBuilds.find(
             (h: any) =>
               h.id === appId ||
@@ -95,6 +105,7 @@ export function PublicLiveAppPage() {
           if (match && match.preview_html) {
             setAppData(match);
             resolvedLocal = true;
+            break;
           }
         }
       }
@@ -119,24 +130,43 @@ export function PublicLiveAppPage() {
       // fallback
     }
 
-    // 4. Also check server registry so published apps work across tabs/devices
-    fetchPublishedFn({ data: { appId } })
-      .then((res) => {
-        if (res?.app) {
-          if (res.app.preview_html && res.app.preview_html.trim()) {
-            setAppData(res.app);
-          } else {
-            setFallbackApp(res.app.name, res.app.description);
+    // 4. Also check server registry & Firestore so published apps work across tabs/devices on the internet
+    (async () => {
+      try {
+        const res = await fetchPublishedFn({ data: { appId } });
+        if (res?.app && res.app.preview_html && res.app.preview_html.trim()) {
+          setAppData(res.app);
+          return;
+        }
+      } catch {
+        // fallback to Firestore
+      }
+
+      try {
+        const snap = await Promise.race([
+          getDoc(doc(db, "published_apps", cleanSlug)),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+        ]);
+        if (snap && snap.exists()) {
+          const d = snap.data() as any;
+          if (d?.preview_html) {
+            setAppData({
+              name: d.name || decodedName,
+              description: d.description || "",
+              preview_html: d.preview_html,
+              published_at: d.published_at,
+            });
+            return;
           }
-        } else if (!resolvedLocal) {
-          setFallbackApp();
         }
-      })
-      .catch(() => {
-        if (!resolvedLocal) {
-          setFallbackApp();
-        }
-      });
+      } catch {
+        // ignore
+      }
+
+      if (!resolvedLocal) {
+        setFallbackApp();
+      }
+    })();
 
     function setFallbackApp(customName?: string, customDesc?: string) {
       setAppData({

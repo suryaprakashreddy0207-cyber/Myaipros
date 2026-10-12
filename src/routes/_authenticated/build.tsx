@@ -28,6 +28,9 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { CodeExplorer } from "@/components/code-explorer";
 import { ProjectControlCenter } from "@/components/project-control-center";
+import { getActiveUserSession, getActiveUserStorageKey } from "@/lib/user-session";
+import { db } from "@/lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/build")({
@@ -427,7 +430,30 @@ function BuildPage() {
     }
   }
 
+  function getBuildsStorageKey(): string {
+    return getActiveUserStorageKey("myaibro_builds_v2");
+  }
+
+  function getActiveBuildStorageKey(): string {
+    return getActiveUserStorageKey("myaibro_active_build_v2");
+  }
+
+  function saveUserBuilds(items: HistoryItem[]) {
+    try {
+      localStorage.setItem(getBuildsStorageKey(), JSON.stringify(items.slice(0, 30)));
+    } catch {
+      /* ignore */
+    }
+  }
+
   useEffect(() => {
+    const activeSession = getActiveUserSession();
+    if (activeSession?.fullName) {
+      setName(activeSession.fullName.split(" ")[0]);
+    } else if (activeSession?.email) {
+      setName(activeSession.email.split("@")[0]);
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       const s = data.session;
       const u = s?.user;
@@ -444,20 +470,24 @@ function BuildPage() {
       if (savedToken) {
         setGithubToken(savedToken);
       }
-      const raw = localStorage.getItem("myaibro.builds");
-      if (raw) setHistory(JSON.parse(raw));
+      const raw = localStorage.getItem(getBuildsStorageKey());
+      if (raw) {
+        setHistory(JSON.parse(raw));
+      } else {
+        setHistory([]);
+      }
     } catch {
       /* ignore */
     }
 
     // Mobile continuity check: if user closed mobile, app continues building on server
-    const savedActiveId = localStorage.getItem("myaibro.activeBuildId");
+    const savedActiveId = localStorage.getItem(getActiveBuildStorageKey());
     if (savedActiveId) {
       getBuildStatusFn({ data: { buildId: savedActiveId } })
         .then((res) => {
           const job = res?.job;
           if (!job) {
-            localStorage.removeItem("myaibro.activeBuildId");
+            localStorage.removeItem(getActiveBuildStorageKey());
             return;
           }
           const targetProjectId = job.existingProjectId || savedActiveId;
@@ -484,7 +514,7 @@ function BuildPage() {
               },
             ]);
             setTab("preview");
-            localStorage.removeItem("myaibro.activeBuildId");
+            localStorage.removeItem(getActiveBuildStorageKey());
             toast.success("Your app finished building while you were away! Loaded from background.");
             setHistory((prev) => {
               const updated = prev.map((h) =>
@@ -492,7 +522,7 @@ function BuildPage() {
                   ? { ...h, ...job, id: targetProjectId, status: "completed" as const }
                   : h,
               );
-              localStorage.setItem("myaibro.builds", JSON.stringify(updated.slice(0, 30)));
+              saveUserBuilds(updated);
               return updated;
             });
           } else if (job.status === "planning" || job.status === "writing") {
@@ -523,7 +553,7 @@ function BuildPage() {
           }
         })
         .catch(() => {
-          localStorage.removeItem("myaibro.activeBuildId");
+          localStorage.removeItem(getActiveBuildStorageKey());
         });
     }
 
@@ -620,7 +650,7 @@ function BuildPage() {
             totalFiles: job.totalFiles,
             completedFiles: job.completedFiles,
           };
-          localStorage.setItem("myaibro.builds", JSON.stringify(updated.slice(0, 30)));
+          saveUserBuilds(updated);
           return updated;
         });
 
@@ -628,7 +658,7 @@ function BuildPage() {
           stopPolling();
           setIsBuilding(false);
           setActiveJobId(null);
-          localStorage.removeItem("myaibro.activeBuildId");
+          localStorage.removeItem(getActiveBuildStorageKey());
           setQuestions(null);
           setPendingEditIdea(null);
           setProgress([]);
@@ -639,6 +669,8 @@ function BuildPage() {
             files: job.files,
           };
           setBuilt(completedBuilt);
+          // Automatically sync to published registry so /p/$appId always shows this app
+          persistPublishedApp(completedBuilt);
           toast.success(
             job.isEditingExisting
               ? `Integrated changes directly into "${job.name}"!`
@@ -648,7 +680,7 @@ function BuildPage() {
           stopPolling();
           setIsBuilding(false);
           setActiveJobId(null);
-          localStorage.removeItem("myaibro.activeBuildId");
+          localStorage.removeItem(getActiveBuildStorageKey());
           toast.error(job.error || "Build encountered an issue.");
         }
       } catch (err) {
@@ -659,7 +691,7 @@ function BuildPage() {
 
   function persist(items: HistoryItem[]) {
     setHistory(items);
-    localStorage.setItem("myaibro.builds", JSON.stringify(items.slice(0, 30)));
+    saveUserBuilds(items);
   }
 
   // Handle Directory Picker for Folder Sharing on Device
@@ -977,7 +1009,7 @@ function BuildPage() {
             progress: [`Editing "${updatedHistory[existingIdx].name}" in-place…`],
             turns: nextTurns,
           };
-          localStorage.setItem("myaibro.builds", JSON.stringify(updatedHistory.slice(0, 30)));
+          saveUserBuilds(updatedHistory);
           return updatedHistory;
         }
         const item: HistoryItem = {
@@ -993,7 +1025,7 @@ function BuildPage() {
           turns: nextTurns,
         };
         const next = [item];
-        localStorage.setItem("myaibro.builds", JSON.stringify(next));
+        saveUserBuilds(next);
         return next;
       });
     } else {
@@ -1011,12 +1043,12 @@ function BuildPage() {
       };
       setHistory((prev) => {
         const updatedHistory = [initialItem, ...prev.filter((h) => h.id !== projectHistoryId)];
-        localStorage.setItem("myaibro.builds", JSON.stringify(updatedHistory.slice(0, 30)));
+        saveUserBuilds(updatedHistory);
         return updatedHistory;
       });
     }
 
-    localStorage.setItem("myaibro.activeBuildId", buildId);
+    localStorage.setItem(getActiveBuildStorageKey(), buildId);
 
     setProgress([
       isEditingExistingApp
@@ -1158,7 +1190,7 @@ function BuildPage() {
     }
     setHistory((prev) => {
       const filtered = prev.filter((x) => x.id !== h.id);
-      localStorage.setItem("myaibro.builds", JSON.stringify(filtered.slice(0, 30)));
+      saveUserBuilds(filtered);
       return filtered;
     });
 
@@ -1177,7 +1209,7 @@ function BuildPage() {
     }
 
     if (currentProjectId === h.id || (built && built.name === h.name)) {
-      localStorage.removeItem("myaibro.activeBuildId");
+      localStorage.removeItem(getActiveBuildStorageKey());
       reset();
     }
 
@@ -1215,7 +1247,7 @@ function BuildPage() {
       </span>
     </header>
     <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
-      <h3 class="text-base font-semibold text-white">Interactive Application</h3>
+      <h3 class="text-base font-semibold text-white">${targetBuilt.name} Workspace</h3>
       <p class="text-sm text-slate-300">Active modules: ${targetBuilt.files?.length || 1} files</p>
       <div class="flex items-center gap-3">
         <button onclick="document.getElementById('demo-cnt').innerText = parseInt(document.getElementById('demo-cnt').innerText) + 1" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-semibold transition">
@@ -1228,16 +1260,17 @@ function BuildPage() {
 </body>
 </html>`;
 
+    const record = {
+      ...targetBuilt,
+      preview_html: ensuredPreviewHtml,
+      id: currentProjectId || cleanSlug,
+      slug: cleanSlug,
+      customDomain: domainVerified ? customDomain : undefined,
+      published_at: new Date().toISOString(),
+    };
+
     try {
       const existing = JSON.parse(localStorage.getItem("myai_published_apps") || "{}");
-      const record = {
-        ...targetBuilt,
-        preview_html: ensuredPreviewHtml,
-        id: currentProjectId || cleanSlug,
-        slug: cleanSlug,
-        customDomain: domainVerified ? customDomain : undefined,
-        published_at: new Date().toISOString(),
-      };
       existing[targetBuilt.name] = record;
       existing[cleanSlug] = record;
       if (currentProjectId) existing[currentProjectId] = record;
@@ -1254,9 +1287,22 @@ function BuildPage() {
           ? { ...h, preview_html: ensuredPreviewHtml, published: true }
           : h,
       );
-      localStorage.setItem("myaibro.builds", JSON.stringify(updated.slice(0, 30)));
+      saveUserBuilds(updated);
       return updated;
     });
+
+    // Save to Firestore published_apps collection in background (with 2s timeout) so internet links work across devices
+    Promise.race([
+      setDoc(doc(db, "published_apps", cleanSlug), {
+        id: record.id,
+        slug: cleanSlug,
+        name: targetBuilt.name,
+        description: targetBuilt.description || "",
+        preview_html: ensuredPreviewHtml,
+        published_at: record.published_at,
+      }),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]).catch(() => undefined);
 
     try {
       await publishAppFn({
@@ -1278,9 +1324,26 @@ function BuildPage() {
   }
 
   function openPublishModal() {
-    if (!built) return;
+    const activeBuilt =
+      built ||
+      (history[0]
+        ? {
+            name: history[0].name,
+            description: history[0].description,
+            preview_html: history[0].preview_html,
+            files: history[0].files || [],
+          }
+        : {
+            name: "My Web Application",
+            description: "Interactive application built on My AI Pro No-Code Platform",
+            preview_html: "",
+            files: [],
+          });
+    if (!built) {
+      setBuilt(activeBuilt);
+    }
     const cleanSlug =
-      built.name
+      activeBuilt.name
         .toLowerCase()
         .replace(/[^a-z0-9-]+/g, "-")
         .replace(/^-|-$/g, "") || "my-app";
@@ -1288,13 +1351,13 @@ function BuildPage() {
     setPublishOpen(true);
 
     // Immediately persist & deploy so Publish Setup works out-of-the-box without getting stuck
-    persistPublishedApp(built, cleanSlug);
+    persistPublishedApp(activeBuilt, cleanSlug);
     if (deployStage !== "live") {
       setDeployStage("building");
       setDeployProgress(35);
       setDeployLogs([
-        `[1/4] Validating ${built.files.length} project modules...`,
-        `[2/4] Bundling production assets for "${built.name}"...`,
+        `[1/4] Validating ${activeBuilt.files.length || 1} project modules...`,
+        `[2/4] Bundling production assets for "${activeBuilt.name}"...`,
       ]);
       setTimeout(() => {
         setDeployStage("cdn");
@@ -1859,10 +1922,54 @@ function BuildPage() {
       </div>
     </div>
   );
+  const activeProjectTitle = built?.name || history[0]?.name || "My Project";
+  const activeProjectDescription =
+    built?.description || history[0]?.description || "Full-stack application on My AI Pro";
+  const activeProjectFiles = built?.files || history[0]?.files || [];
+
+  const projectControlCenterModal = (
+    <ProjectControlCenter
+      open={projectMenuOpen}
+      onClose={() => setProjectMenuOpen(false)}
+      projectName={activeProjectTitle}
+      projectDescription={activeProjectDescription}
+      onRenameProject={(newName, newDesc) => {
+        setBuilt((prev) =>
+          prev
+            ? {
+                ...prev,
+                name: newName,
+                description: newDesc ?? prev.description,
+              }
+            : prev,
+        );
+        setHistory((prev) => {
+          const updated = prev.map((h, idx) =>
+            h.id === currentProjectId ||
+            (built && h.name === built.name) ||
+            (!built && idx === 0)
+              ? { ...h, name: newName, description: newDesc ?? h.description }
+              : h,
+          );
+          saveUserBuilds(updated);
+          return updated;
+        });
+      }}
+      files={activeProjectFiles}
+      history={history}
+      currentProjectId={currentProjectId || history[0]?.id || null}
+      onSelectHistoryProject={(h) => openHistoryProject(h)}
+      onDeleteHistoryProject={(h, e) => handleDeleteProject(h, e)}
+      onOpenPublish={openPublishModal}
+      onSwitchSlide={(s) => goToSlide(s)}
+    />
+  );
+
   if (built) {
     return (
       <div className="flex h-[100dvh] flex-col bg-[#f7f7f6] font-sans text-zinc-900 select-none sm:select-auto">
         {sharedFileInputs}
+        {projectControlCenterModal}
 
         {/* Top Bar: [ (X) ]   [ Project Name v ]   [ (>) / Publish ] */}
         <header className="flex h-16 shrink-0 items-center justify-between px-4 bg-[#f7f7f6]/95 backdrop-blur-md z-30">
@@ -1889,40 +1996,6 @@ function BuildPage() {
               </span>
               <ChevronDown className="size-4 shrink-0 text-zinc-500" />
             </button>
-
-            <ProjectControlCenter
-              open={projectMenuOpen}
-              onClose={() => setProjectMenuOpen(false)}
-              projectName={built.name}
-              projectDescription={built.description}
-              onRenameProject={(newName, newDesc) => {
-                setBuilt((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        name: newName,
-                        description: newDesc ?? prev.description,
-                      }
-                    : prev,
-                );
-                setHistory((prev) => {
-                  const updated = prev.map((h) =>
-                    h.id === currentProjectId || h.name === built.name
-                      ? { ...h, name: newName, description: newDesc ?? h.description }
-                      : h,
-                  );
-                  localStorage.setItem("myaibro.builds", JSON.stringify(updated.slice(0, 30)));
-                  return updated;
-                });
-              }}
-              files={built.files}
-              history={history}
-              currentProjectId={currentProjectId}
-              onSelectHistoryProject={(h) => openHistoryProject(h)}
-              onDeleteHistoryProject={(h, e) => handleDeleteProject(h, e)}
-              onOpenPublish={openPublishModal}
-              onSwitchSlide={(s) => goToSlide(s)}
-            />
           </div>
 
           {/* Right: History button + Publish button + Slide switcher */}
@@ -2648,7 +2721,7 @@ function BuildPage() {
                             ? { ...h, files: updatedFiles, totalFiles: updatedFiles.length, completedFiles: updatedFiles.length }
                             : h,
                         );
-                        localStorage.setItem("myaibro.builds", JSON.stringify(updated.slice(0, 30)));
+                        saveUserBuilds(updated);
                         return updated;
                       });
                     }}
@@ -2764,12 +2837,9 @@ function BuildPage() {
                       <div className="flex flex-wrap items-center gap-2 w-full justify-between">
                         <button
                           type="button"
-                          onClick={() => {
-                            const activeSlug =
-                              publishSlug ||
-                              built.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, "") ||
-                              "my-app";
-                            const liveUrl = `${window.location.origin}/p/${activeSlug}`;
+                          onClick={async () => {
+                            const slug = await persistPublishedApp(built, publishSlug);
+                            const liveUrl = `${window.location.origin}/p/${slug}`;
                             navigator.clipboard.writeText(liveUrl);
                             toast.success("Live production URL copied!");
                           }}
@@ -2782,6 +2852,9 @@ function BuildPage() {
                             href={`/p/${publishSlug || built.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, "") || "my-app"}`}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={() => {
+                              persistPublishedApp(built, publishSlug);
+                            }}
                             className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-3.5 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50 transition"
                           >
                             <ExternalLink className="size-3.5" /> New Tab
@@ -2923,6 +2996,9 @@ function BuildPage() {
                         href={`/p/${publishSlug || built.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, "") || "my-app"}`}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={() => {
+                          persistPublishedApp(built, publishSlug);
+                        }}
                         className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-3.5 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50 transition"
                       >
                         <ExternalLink className="size-3.5" /> New Tab
@@ -3176,11 +3252,34 @@ function BuildPage() {
   /* ---------- Home ---------- */
   return (
     <div className="flex h-[100dvh] flex-col bg-canvas font-sans text-ink">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-black/5 px-4">
-        <h1 className="font-serif text-xl">No-code platform</h1>
-        <button onClick={() => setShowHistory((v) => !v)} className="p-2 text-muted-foreground hover:text-ink">
-          <History className="size-5" />
+      {projectControlCenterModal}
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-black/5 px-4 gap-2">
+        <h1 className="font-serif text-lg sm:text-xl truncate">No-code platform</h1>
+
+        {/* Clickable Project Name Pill right in the top bar */}
+        <button
+          type="button"
+          onClick={() => setProjectMenuOpen(true)}
+          title="Click to open Cloud, Database, Users, Storage, AI, Payments & Settings"
+          className="flex items-center gap-1.5 rounded-full bg-surface border border-black/10 px-3.5 py-1.5 text-xs font-semibold text-ink shadow-2xs hover:bg-surface/80 active:scale-95 transition max-w-[200px]"
+        >
+          <span className="truncate">{activeProjectTitle}</span>
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
         </button>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={openPublishModal}
+            className="flex items-center gap-1 rounded-full bg-ink px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:opacity-90 transition"
+          >
+            <Rocket className="size-3" />
+            <span>Publish</span>
+          </button>
+          <button onClick={() => setShowHistory((v) => !v)} className="p-2 text-muted-foreground hover:text-ink" title="Project History">
+            <History className="size-5" />
+          </button>
+        </div>
       </header>
       <TopTabs />
 

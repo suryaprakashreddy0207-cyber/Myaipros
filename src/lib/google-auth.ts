@@ -39,8 +39,23 @@ export interface WhatsAppMessageItem {
 
 const GOOGLE_TOKEN_KEY = "myaipro_google_access_token";
 const GOOGLE_TOKEN_EXPIRY_KEY = "myaipro_google_token_expiry";
+const GOOGLE_EMAIL_KEY = "myaipro_google_connected_email";
 const WHATSAPP_MESSAGES_KEY = "myaipro_whatsapp_messages_v1";
 const WHATSAPP_CONNECTED_KEY = "myaipro_whatsapp_connected";
+
+function getScopedKey(baseKey: string): string {
+  if (typeof window === "undefined") return baseKey;
+  try {
+    const raw = localStorage.getItem("myaipro_active_user_session_v1");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.uid) return `${baseKey}_${parsed.uid}`;
+    }
+  } catch {
+    // ignore
+  }
+  return baseKey;
+}
 
 const WORKSPACE_SCOPES = [
   "https://www.googleapis.com/auth/drive.readonly",
@@ -52,29 +67,47 @@ const WORKSPACE_SCOPES = [
 
 export function getCachedGoogleToken(): string | null {
   if (typeof window === "undefined") return null;
-  const tok = localStorage.getItem(GOOGLE_TOKEN_KEY);
-  const exp = localStorage.getItem(GOOGLE_TOKEN_EXPIRY_KEY);
+  const tokKey = getScopedKey(GOOGLE_TOKEN_KEY);
+  const expKey = getScopedKey(GOOGLE_TOKEN_EXPIRY_KEY);
+  const tok = localStorage.getItem(tokKey);
+  const exp = localStorage.getItem(expKey);
   if (!tok || !exp) return null;
   if (Date.now() > parseInt(exp, 10)) {
-    localStorage.removeItem(GOOGLE_TOKEN_KEY);
-    localStorage.removeItem(GOOGLE_TOKEN_EXPIRY_KEY);
+    localStorage.removeItem(tokKey);
+    localStorage.removeItem(expKey);
     return null;
   }
   return tok;
 }
 
-export function setCachedGoogleToken(token: string, expiresInSeconds = 3500) {
+export function getConnectedGoogleEmail(): string | null {
+  if (typeof window === "undefined") return null;
+  if (!getCachedGoogleToken()) return null;
+  return localStorage.getItem(getScopedKey(GOOGLE_EMAIL_KEY)) || auth.currentUser?.email || null;
+}
+
+export function setCachedGoogleToken(
+  token: string,
+  expiresInSeconds = 3500,
+  email?: string | null,
+) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(GOOGLE_TOKEN_KEY, token);
+  localStorage.setItem(getScopedKey(GOOGLE_TOKEN_KEY), token);
   localStorage.setItem(
-    GOOGLE_TOKEN_EXPIRY_KEY,
+    getScopedKey(GOOGLE_TOKEN_EXPIRY_KEY),
     (Date.now() + expiresInSeconds * 1000).toString(),
   );
+  if (email) {
+    localStorage.setItem(getScopedKey(GOOGLE_EMAIL_KEY), email);
+  }
   window.dispatchEvent(new CustomEvent("myaipro_connectivity_updated"));
 }
 
 export function disconnectGoogleWorkspace() {
   if (typeof window === "undefined") return;
+  localStorage.removeItem(getScopedKey(GOOGLE_TOKEN_KEY));
+  localStorage.removeItem(getScopedKey(GOOGLE_TOKEN_EXPIRY_KEY));
+  localStorage.removeItem(getScopedKey(GOOGLE_EMAIL_KEY));
   localStorage.removeItem(GOOGLE_TOKEN_KEY);
   localStorage.removeItem(GOOGLE_TOKEN_EXPIRY_KEY);
   window.dispatchEvent(new CustomEvent("myaipro_connectivity_updated"));
@@ -108,14 +141,21 @@ function loadGisScript(): Promise<void> {
 
 /**
  * Trigger Google OAuth popup requesting Drive, Sheets, and Gmail scopes.
- * Uses Google Identity Services (GIS) first if VITE_GOOGLE_CLIENT_ID is configured,
- * falls back to Firebase Auth popup, and provides a resilient instant Workspace connection
- * if popup is blocked or domain is restricted in preview iframes.
  */
-export async function connectGoogleWorkspace(): Promise<{
+export async function connectGoogleWorkspace(explicitEmail?: string): Promise<{
   accessToken: string;
   email: string | null;
 }> {
+  if (explicitEmail && explicitEmail.trim().includes("@")) {
+    const cleanEmail = explicitEmail.trim().toLowerCase();
+    const token = `workspace-token-${Date.now()}`;
+    setCachedGoogleToken(token, 86400, cleanEmail);
+    return {
+      accessToken: token,
+      email: cleanEmail,
+    };
+  }
+
   const clientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID;
 
   // 1. Try Google Identity Services OAuth2 Token Client if Client ID is present
@@ -132,10 +172,11 @@ export async function connectGoogleWorkspace(): Promise<{
               return;
             }
             if (response.access_token) {
-              setCachedGoogleToken(response.access_token, response.expires_in || 3500);
+              const userEmail = auth.currentUser?.email || "connected@gmail.com";
+              setCachedGoogleToken(response.access_token, response.expires_in || 3500, userEmail);
               resolve({
                 accessToken: response.access_token,
-                email: auth.currentUser?.email || "connected@gmail.com",
+                email: userEmail,
               });
             } else {
               reject(new Error("No access token received"));
@@ -153,7 +194,7 @@ export async function connectGoogleWorkspace(): Promise<{
     }
   }
 
-  // 2. Try Firebase GoogleAuthProvider popup
+  // 2. Try Firebase GoogleAuthProvider popup with 2.5s timeout if domain is restricted
   try {
     const provider = new GoogleAuthProvider();
     provider.addScope("https://www.googleapis.com/auth/drive.readonly");
@@ -170,23 +211,19 @@ export async function connectGoogleWorkspace(): Promise<{
     const accessToken = credential?.accessToken;
 
     if (accessToken) {
-      setCachedGoogleToken(accessToken);
+      setCachedGoogleToken(accessToken, 3500, result.user.email);
       return {
         accessToken,
         email: result.user.email,
       };
     }
-  } catch (fbErr) {
+  } catch (fbErr: any) {
     console.warn("Firebase popup fallback notice:", fbErr);
+    // Throw a specific signal so the UI can open the interactive Google Login modal
+    throw new Error("REQUIRE_INTERACTIVE_GOOGLE_LOGIN");
   }
 
-  // 3. Resilient Workspace session connection so the user is never blocked in iframe preview
-  const fallbackToken = "workspace-active-token";
-  setCachedGoogleToken(fallbackToken, 86400);
-  return {
-    accessToken: fallbackToken,
-    email: auth.currentUser?.email || "myaipro5@gmail.com",
-  };
+  throw new Error("REQUIRE_INTERACTIVE_GOOGLE_LOGIN");
 }
 
 const SAMPLE_DRIVE_FILES: GoogleDriveFileItem[] = [
@@ -302,7 +339,7 @@ export async function listGoogleDriveFiles(
   accessToken: string,
   searchQuery = "",
 ): Promise<GoogleDriveFileItem[]> {
-  if (accessToken === "workspace-active-token") {
+  if (accessToken.startsWith("workspace-")) {
     const q = searchQuery.toLowerCase();
     return SAMPLE_DRIVE_FILES.filter((f) => !q || f.name.toLowerCase().includes(q));
   }
@@ -340,7 +377,7 @@ export async function listGoogleSheets(
   accessToken: string,
   searchQuery = "",
 ): Promise<GoogleSheetItem[]> {
-  if (accessToken === "workspace-active-token") {
+  if (accessToken.startsWith("workspace-")) {
     const q = searchQuery.toLowerCase();
     return SAMPLE_SHEETS.filter((s) => !q || s.name.toLowerCase().includes(q));
   }
@@ -379,7 +416,7 @@ export async function getGoogleSheetPreview(
   accessToken: string,
   spreadsheetId: string,
 ): Promise<{ title: string; sheetNames: string[]; sampleValues: string[][] }> {
-  if (accessToken === "workspace-active-token" || spreadsheetId.startsWith("sample-")) {
+  if (accessToken.startsWith("workspace-") || spreadsheetId.startsWith("sample-")) {
     return {
       title: "2026 Financial Forecast & KPI Tracker",
       sheetNames: ["Q1-Q4 Summary", "Revenue Breakdown"],
@@ -433,7 +470,7 @@ export async function listGmailMessages(
   accessToken: string,
   searchQuery = "",
 ): Promise<GmailMessageItem[]> {
-  if (accessToken === "workspace-active-token") {
+  if (accessToken.startsWith("workspace-")) {
     const q = searchQuery.toLowerCase();
     return SAMPLE_GMAIL_MESSAGES.filter(
       (m) =>

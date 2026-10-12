@@ -501,16 +501,16 @@ function ProjectDetailPage() {
                     }`}
                   >
                     <div
-                      className={`max-w-[85%] rounded-3xl px-4 py-3 text-sm leading-relaxed ${
+                      className={`max-w-[85%] rounded-3xl px-4 py-3 text-sm leading-relaxed text-white ${
                         m.role === "user"
-                          ? "bg-brand text-brand-foreground rounded-tr-md shadow-sm"
+                          ? "bg-brand text-white rounded-tr-md shadow-sm"
                           : "bg-[#1c1c1e] text-white rounded-tl-md border border-neutral-800"
                       }`}
                     >
                       {m.role === "user" ? (
-                        <p className="whitespace-pre-wrap">{m.content}</p>
+                        <p className="whitespace-pre-wrap text-white">{m.content}</p>
                       ) : (
-                        <RichMessage content={m.content} />
+                        <RichMessage content={m.content} variant="dark" />
                       )}
                     </div>
 

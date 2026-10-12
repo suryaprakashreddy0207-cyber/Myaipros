@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   X,
   Search,
@@ -8,6 +8,9 @@ import {
   FileText,
   AlertCircle,
   ExternalLink,
+  Mail,
+  Lock,
+  LogOut,
 } from "lucide-react";
 import {
   GoogleDriveLogo,
@@ -17,7 +20,9 @@ import {
 } from "@/components/icons/app-logos";
 import {
   connectGoogleWorkspace,
+  disconnectGoogleWorkspace,
   getCachedGoogleToken,
+  getConnectedGoogleEmail,
   listGoogleDriveFiles,
   listGoogleSheets,
   listGmailMessages,
@@ -28,6 +33,7 @@ import {
   type GmailMessageItem,
 } from "@/lib/google-auth";
 import { addSourceToProject, type ProjectSource } from "@/lib/projects-store";
+import { getActiveUserSession } from "@/lib/user-session";
 import { toast } from "sonner";
 
 interface AddSourceModalProps {
@@ -50,6 +56,14 @@ export function AddSourceModal({
   const [isLoadingItems, setIsLoadingItems] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [token, setToken] = useState<string | null>(getCachedGoogleToken());
+  const [connectedEmail, setConnectedEmail] = useState<string | null>(
+    getConnectedGoogleEmail(),
+  );
+  const [googleEmailInput, setGoogleEmailInput] = useState(
+    () => getActiveUserSession()?.email || "myaipro5@gmail.com",
+  );
+  const [googlePasswordInput, setGooglePasswordInput] = useState("");
+  const [showGoogleLoginBox, setShowGoogleLoginBox] = useState(false);
 
   // Data states
   const [driveFiles, setDriveFiles] = useState<GoogleDriveFileItem[]>([]);
@@ -62,20 +76,49 @@ export function AddSourceModal({
   const [uploadFileName, setUploadFileName] = useState("");
   const [uploadFileContent, setUploadFileContent] = useState("");
 
+  useEffect(() => {
+    if (isOpen) {
+      const currentTok = getCachedGoogleToken();
+      setToken(currentTok);
+      setConnectedEmail(getConnectedGoogleEmail());
+      if (currentTok && activeTab !== "file") {
+        loadItemsForTab(activeTab, currentTok);
+      }
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  async function handleGoogleConnect() {
+  async function handleGoogleConnect(explicitEmail?: string) {
     setIsConnecting(true);
     try {
-      const res = await connectGoogleWorkspace();
+      const res = await connectGoogleWorkspace(explicitEmail);
       setToken(res.accessToken);
-      toast.success("Connected to Google Workspace!");
+      setConnectedEmail(res.email || explicitEmail || "Connected");
+      setShowGoogleLoginBox(false);
+      toast.success(
+        `Signed in to Gmail, Google Sheets & Google Drive (${res.email || "Google Account"})!`,
+      );
       loadItemsForTab(activeTab, res.accessToken);
     } catch (err: any) {
-      toast.error(err.message || "Google sign-in was canceled or failed.");
+      if (err?.message === "REQUIRE_INTERACTIVE_GOOGLE_LOGIN") {
+        setShowGoogleLoginBox(true);
+      } else {
+        setShowGoogleLoginBox(true);
+      }
     } finally {
       setIsConnecting(false);
     }
+  }
+
+  function handleDisconnectGoogle() {
+    disconnectGoogleWorkspace();
+    setToken(null);
+    setConnectedEmail(null);
+    setDriveFiles([]);
+    setSheetsList([]);
+    setGmailList([]);
+    toast.success("Disconnected Google account");
   }
 
   async function loadItemsForTab(tab: TabType, currentToken?: string | null) {
@@ -284,50 +327,101 @@ export function AddSourceModal({
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-5">
           {activeTab !== "file" && !token ? (
-            /* Google OAuth Connect Callout */
-            <div className="flex h-full flex-col items-center justify-center text-center p-6 space-y-4">
-              <div className="flex items-center gap-2">
-                <GoogleDriveLogo className="size-8" />
-                <GoogleSheetsLogo className="size-8" />
-                <GmailLogo className="size-8" />
+            /* Google OAuth & Account Login Callout */
+            <div className="flex h-full flex-col items-center justify-center text-center p-4 space-y-4">
+              <div className="flex items-center gap-3 rounded-2xl bg-neutral-900/90 border border-neutral-800 px-5 py-3 shadow-inner">
+                <GmailLogo className="size-7" />
+                <GoogleSheetsLogo className="size-7" />
+                <GoogleDriveLogo className="size-7" />
               </div>
-              <h4 className="text-lg font-medium text-white">
-                Connect your Google Account
-              </h4>
-              <p className="max-w-md text-xs text-neutral-400 leading-relaxed">
-                Authorize Google Workspace to browse and select your Google Drive files,
-                Sheets spreadsheets, and Gmail messages to give My AI direct context.
-              </p>
-              <div className="flex flex-col sm:flex-row items-center gap-3">
+              <div className="space-y-1">
+                <h4 className="text-base font-semibold text-white">
+                  Sign in with Google to view your{" "}
+                  {activeTab === "gmail"
+                    ? "Gmail"
+                    : activeTab === "sheets"
+                      ? "Google Sheets"
+                      : "Google Drive"}{" "}
+                  History
+                </h4>
+                <p className="max-w-md text-xs text-neutral-400 leading-relaxed">
+                  Log in with your Gmail, Google Sheets, and Google Drive account. Your
+                  files, spreadsheets, and email history will only be shown after you sign in.
+                </p>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!googleEmailInput.trim() || !googleEmailInput.includes("@")) {
+                    toast.error("Please enter a valid Google / Gmail address");
+                    return;
+                  }
+                  handleGoogleConnect(googleEmailInput.trim());
+                }}
+                className="w-full max-w-sm rounded-2xl bg-neutral-900/90 border border-neutral-800 p-4 text-left space-y-3"
+              >
+                <div>
+                  <label className="block text-[11px] font-medium text-neutral-300 mb-1">
+                    Gmail / Google Account Email
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-2.5 size-4 text-neutral-500" />
+                    <input
+                      type="email"
+                      required
+                      value={googleEmailInput}
+                      onChange={(e) => setGoogleEmailInput(e.target.value)}
+                      placeholder="you@gmail.com"
+                      className="w-full rounded-xl bg-neutral-950 border border-neutral-800 py-2 pl-9 pr-3 text-xs text-white placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-neutral-300 mb-1">
+                    Google Password (Optional for OAuth)
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-2.5 size-4 text-neutral-500" />
+                    <input
+                      type="password"
+                      value={googlePasswordInput}
+                      onChange={(e) => setGooglePasswordInput(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full rounded-xl bg-neutral-950 border border-neutral-800 py-2 pl-9 pr-3 text-xs text-white placeholder:text-neutral-600 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
                 <button
-                  onClick={handleGoogleConnect}
+                  type="submit"
                   disabled={isConnecting}
-                  className="flex items-center gap-2 rounded-full bg-white px-6 py-2.5 text-sm font-semibold text-black hover:bg-neutral-100 transition shadow-lg active:scale-95 disabled:opacity-50"
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-white py-2.5 px-4 text-xs font-semibold text-black hover:bg-neutral-200 transition shadow-md disabled:opacity-50"
                 >
                   {isConnecting ? (
                     <>
                       <Loader2 className="size-4 animate-spin text-black" />
-                      Connecting...
+                      <span>Signing in to Google Workspace...</span>
                     </>
                   ) : (
                     <>
-                      <GoogleDriveLogo className="size-4" />
-                      Sign in with Google
+                      <GmailLogo className="size-4" />
+                      <span>Login to Gmail, Sheets &amp; Drive</span>
                     </>
                   )}
                 </button>
+
                 <button
-                  onClick={() => {
-                    const sampleToken = "workspace-active-token";
-                    setToken(sampleToken);
-                    toast.success("Connected to Google Workspace!");
-                    loadItemsForTab(activeTab, sampleToken);
-                  }}
-                  className="rounded-full border border-neutral-700 bg-neutral-800/80 px-5 py-2.5 text-xs font-medium text-neutral-300 hover:bg-neutral-700 hover:text-white transition"
+                  type="button"
+                  onClick={() => handleGoogleConnect()}
+                  disabled={isConnecting}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl border border-neutral-700 bg-neutral-800/70 py-2 px-4 text-[11px] font-medium text-neutral-200 hover:bg-neutral-800 transition"
                 >
-                  Connect with Sample Workspace
+                  <GoogleDriveLogo className="size-3.5" />
+                  <span>Use Browser Google OAuth Popup</span>
                 </button>
-              </div>
+              </form>
             </div>
           ) : activeTab === "file" ? (
             /* File Upload Form */
@@ -375,6 +469,24 @@ export function AddSourceModal({
           ) : (
             /* Google Items List (Drive / Sheets / Gmail) */
             <div className="space-y-3">
+              {/* Connected Google Account Bar */}
+              <div className="flex items-center justify-between rounded-2xl bg-emerald-500/10 border border-emerald-500/25 px-3.5 py-2 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="size-2 rounded-full bg-emerald-400 shrink-0" />
+                  <span className="truncate font-medium text-emerald-300">
+                    Logged in: {connectedEmail || "Google Workspace"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDisconnectGoogle}
+                  className="inline-flex items-center gap-1 rounded-lg bg-neutral-900/80 px-2.5 py-1 text-[11px] font-medium text-neutral-300 hover:text-white transition"
+                >
+                  <LogOut className="size-3" />
+                  <span>Switch Account</span>
+                </button>
+              </div>
+
               {/* Search & Refresh */}
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">

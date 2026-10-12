@@ -1,3 +1,5 @@
+import { getActiveUserSession, getActiveUserStorageKey } from "@/lib/user-session";
+
 export interface LocalThread {
   id: string;
   title: string;
@@ -6,6 +8,7 @@ export interface LocalThread {
   updated_at: string;
   created_at: string;
   message_count?: number;
+  user_key?: string;
 }
 
 export interface LocalMessage {
@@ -18,52 +21,98 @@ export interface LocalMessage {
   created_at: string;
 }
 
-const THREADS_STORAGE_KEY = "myaipro_chat_threads_v2";
-const MESSAGES_STORAGE_PREFIX = "myaipro_chat_messages_v2_";
+const LEGACY_THREADS_KEY = "myaipro_chat_threads_v2";
+const LEGACY_MESSAGES_PREFIX = "myaipro_chat_messages_v2_";
 
-/** Get all threads stored in localStorage */
+function getThreadsKey(): string {
+  const userKey = getActiveUserStorageKey();
+  return userKey === "guest"
+    ? LEGACY_THREADS_KEY
+    : `myaipro_chat_threads_v2_${userKey}`;
+}
+
+function getMessagesKey(threadId: string): string {
+  const userKey = getActiveUserStorageKey();
+  return userKey === "guest"
+    ? `${LEGACY_MESSAGES_PREFIX}${threadId}`
+    : `myaipro_chat_messages_v2_${userKey}_${threadId}`;
+}
+
+/** Get all threads stored in localStorage for the active user */
 export function getLocalThreads(): LocalThread[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(THREADS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const key = getThreadsKey();
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    }
+
+    // If returning ("old") user and scoped key is not yet written, check legacy key
+    const session = getActiveUserSession();
+    if (session && !session.isNewUser) {
+      const legacyRaw = localStorage.getItem(LEGACY_THREADS_KEY);
+      if (legacyRaw) {
+        const parsed = JSON.parse(legacyRaw);
+        if (Array.isArray(parsed)) {
+          localStorage.setItem(key, legacyRaw);
+          return parsed;
+        }
+      }
+    }
+    return [];
   } catch {
     return [];
   }
 }
 
-/** Save list of threads */
+/** Save list of threads for the active user */
 export function saveLocalThreads(threads: LocalThread[]): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(THREADS_STORAGE_KEY, JSON.stringify(threads));
+    localStorage.setItem(getThreadsKey(), JSON.stringify(threads));
   } catch {
     // ignore quota
   }
 }
 
-/** Get messages for a thread from localStorage */
+/** Get messages for a thread from localStorage for the active user */
 export function getLocalMessages(threadId: string): LocalMessage[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(`${MESSAGES_STORAGE_PREFIX}${threadId}`);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const key = getMessagesKey(threadId);
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    }
+
+    // For returning ("old") users, fall back to legacy messages if not yet migrated
+    const session = getActiveUserSession();
+    if (session && !session.isNewUser) {
+      const legacyRaw = localStorage.getItem(`${LEGACY_MESSAGES_PREFIX}${threadId}`);
+      if (legacyRaw) {
+        const parsed = JSON.parse(legacyRaw);
+        if (Array.isArray(parsed)) {
+          localStorage.setItem(key, legacyRaw);
+          return parsed;
+        }
+      }
+    }
+    return [];
   } catch {
     return [];
   }
 }
 
-/** Save messages for a thread to localStorage */
+/** Save messages for a thread to localStorage for the active user */
 export function saveLocalMessages(threadId: string, messages: LocalMessage[]): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(`${MESSAGES_STORAGE_PREFIX}${threadId}`, JSON.stringify(messages));
+    localStorage.setItem(getMessagesKey(threadId), JSON.stringify(messages));
 
-    // Also update thread metadata in the threads list
+    // Also update thread metadata in the user's threads list
     const threads = getLocalThreads();
     const idx = threads.findIndex((t) => t.id === threadId);
     const now = new Date().toISOString();
@@ -78,7 +127,9 @@ export function saveLocalMessages(threadId: string, messages: LocalMessage[]): v
       threads[idx] = {
         ...threads[idx],
         title:
-          !threads[idx].title || threads[idx].title === "New conversation" || threads[idx].title === "Untitled"
+          !threads[idx].title ||
+          threads[idx].title === "New conversation" ||
+          threads[idx].title === "Untitled"
             ? cleanTitle || "New conversation"
             : threads[idx].title,
         first_prompt: threads[idx].first_prompt || firstUserMsg,
@@ -86,7 +137,7 @@ export function saveLocalMessages(threadId: string, messages: LocalMessage[]): v
         updated_at: now,
         message_count: messages.length,
       };
-    } else if (threadId && threadId !== "default") {
+    } else if (threadId && (threadId !== "default" || messages.length > 0)) {
       threads.unshift({
         id: threadId,
         title: cleanTitle || "New conversation",
@@ -95,6 +146,7 @@ export function saveLocalMessages(threadId: string, messages: LocalMessage[]): v
         updated_at: now,
         created_at: now,
         message_count: messages.length,
+        user_key: getActiveUserStorageKey(),
       });
     }
 
@@ -119,7 +171,7 @@ export function updateLocalThreadTitle(threadId: string, newTitle: string): void
 export function deleteLocalThread(threadId: string): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.removeItem(`${MESSAGES_STORAGE_PREFIX}${threadId}`);
+    localStorage.removeItem(getMessagesKey(threadId));
     const threads = getLocalThreads().filter((t) => t.id !== threadId);
     saveLocalThreads(threads);
   } catch {
@@ -131,7 +183,7 @@ export function deleteLocalThread(threadId: string): void {
 export function clearLocalThreadMessages(threadId: string): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(`${MESSAGES_STORAGE_PREFIX}${threadId}`, JSON.stringify([]));
+    localStorage.setItem(getMessagesKey(threadId), JSON.stringify([]));
     const threads = getLocalThreads();
     const idx = threads.findIndex((t) => t.id === threadId);
     if (idx !== -1) {

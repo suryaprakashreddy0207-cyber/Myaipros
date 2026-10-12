@@ -498,7 +498,14 @@ function CodeBlock({
   );
 }
 
-export function RichMessage({ content }: { content: string }) {
+export function RichMessage({
+  content,
+  variant = "default",
+}: {
+  content: string;
+  variant?: "default" | "dark";
+}) {
+  const isDark = variant === "dark";
   // 1. Detect markdown links to YouTube: [title](https://youtube.com/...)
   const mdYtRe =
     /\[([^\]]*)\]\((https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)[^\s)]+)\)/gi;
@@ -536,11 +543,57 @@ export function RichMessage({ content }: { content: string }) {
 
   return (
     <div className="w-full max-w-full space-y-3">
-      <div className="prose prose-sm max-w-none text-sm leading-relaxed text-ink prose-p:my-2 prose-pre:my-0 prose-pre:bg-transparent prose-pre:p-0 prose-code:before:hidden prose-code:after:hidden prose-img:my-2 prose-img:rounded-xl">
+      <div
+        className={cn(
+          "prose prose-sm max-w-none text-sm leading-relaxed prose-p:my-2 prose-pre:my-0 prose-pre:bg-transparent prose-pre:p-0 prose-code:before:hidden prose-code:after:hidden prose-img:my-2 prose-img:rounded-xl",
+          isDark
+            ? "prose-invert text-white prose-p:text-white prose-headings:text-white prose-strong:text-white prose-li:text-white prose-td:text-white prose-th:text-white prose-blockquote:text-zinc-200"
+            : "text-ink",
+        )}
+      >
         <ReactMarkdown
           components={{
             p({ children }: any) {
-              return <div className="my-2">{children}</div>;
+              return (
+                <div className={cn("my-2", isDark ? "text-white" : "")}>
+                  {children}
+                </div>
+              );
+            },
+            h1({ children }: any) {
+              return (
+                <h1 className={cn("font-bold my-2", isDark ? "text-white" : "")}>
+                  {children}
+                </h1>
+              );
+            },
+            h2({ children }: any) {
+              return (
+                <h2 className={cn("font-bold my-2", isDark ? "text-white" : "")}>
+                  {children}
+                </h2>
+              );
+            },
+            h3({ children }: any) {
+              return (
+                <h3 className={cn("font-semibold my-1.5", isDark ? "text-white" : "")}>
+                  {children}
+                </h3>
+              );
+            },
+            li({ children }: any) {
+              return (
+                <li className={cn("my-0.5", isDark ? "text-white marker:text-white/80" : "")}>
+                  {children}
+                </li>
+              );
+            },
+            strong({ children }: any) {
+              return (
+                <strong className={cn("font-semibold", isDark ? "text-white" : "")}>
+                  {children}
+                </strong>
+              );
             },
             code({ inline, className, children }: any) {
               const text = String(children ?? "");
@@ -550,7 +603,12 @@ export function RichMessage({ content }: { content: string }) {
                 text.includes("\n");
               if (!isBlock) {
                 return (
-                  <code className="rounded bg-ink/10 px-1.5 py-0.5 font-mono text-[0.85em]">
+                  <code
+                    className={cn(
+                      "rounded px-1.5 py-0.5 font-mono text-[0.85em]",
+                      isDark ? "bg-white/15 text-white" : "bg-ink/10",
+                    )}
+                  >
                     {children}
                   </code>
                 );
@@ -578,9 +636,9 @@ export function RichMessage({ content }: { content: string }) {
                     href={href}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 font-semibold text-red-600 hover:underline"
+                    className="inline-flex items-center gap-1 font-semibold text-red-500 hover:underline"
                   >
-                    <Play className="size-3 fill-red-600" />
+                    <Play className="size-3 fill-red-500" />
                     <span>{children || "Watch on YouTube"}</span>
                   </a>
                 );
@@ -590,7 +648,7 @@ export function RichMessage({ content }: { content: string }) {
                   href={href}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-brand underline"
+                  className={cn("underline", isDark ? "text-blue-400" : "text-brand")}
                 >
                   {children}
                 </a>
