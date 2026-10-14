@@ -58,8 +58,8 @@ Strict rules:
 
           // Use valid Gemini models for accurate neural audio transcription
           const transcribeModels = [
-            "gemini-2.5-flash",
-            "gemini-3-flash-preview",
+            "gemini-3.1-flash-lite",
+            "gemini-3.5-transcribe",
             "gemini-flash-latest",
           ];
           for (const model of transcribeModels) {

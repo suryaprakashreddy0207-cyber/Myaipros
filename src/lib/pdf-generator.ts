@@ -561,7 +561,7 @@ export function joinPdfDocuments(
   const combinedSections = validDocs.map((d, idx) => {
     const header = `# Section ${idx + 1}: ${d.title || `Document ${idx + 1}`}`;
     const meta = d.subtitle ? `*${d.subtitle}*\n` : "";
-    return `${header}\n${meta}\n${d.content.trim()}`;
+    return `${header}\n${meta}\n${(d.content || "").trim()}`;
   });
 
   const combinedDoc: PdfDocumentInput = {

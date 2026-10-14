@@ -25,29 +25,69 @@ async function replyWithAI(opts: {
   businessDesc: string;
   website: string | null;
 }): Promise<string> {
+  const system = `You are the professional, friendly customer support and sales assistant for "${opts.businessName}".
+Current Date: October 2026.
+Reply concisely (1-3 sentences maximum), warmly, politely, and in the customer's exact language.
+${opts.businessDesc ? `About our business: ${opts.businessDesc}` : ""}
+${opts.website ? `Official Website: ${opts.website}` : ""}
+Never invent unverified prices or inventory — offer to connect them with a human specialist if needed. Fulfill questions directly.`;
+
+  // 1. Primary fast Gemini API
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const { GoogleGenAI } = await import("@google/genai");
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: { headers: { "User-Agent": "aistudio-build" } },
+      });
+      for (const model of ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview", "gemini-3.8-flash"]) {
+        try {
+          const res = await ai.models.generateContent({
+            model,
+            contents: opts.incomingText,
+            config: {
+              systemInstruction: system,
+              maxOutputTokens: 1024,
+            },
+          });
+          if (res.text && res.text.trim()) {
+            return res.text.trim();
+          }
+        } catch {
+          // try next model
+        }
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  // 2. Perplexity fallback if configured
   const apiKey = process.env.PERPLEXITY_API_KEY;
-  if (!apiKey) return "Thanks for reaching out — we'll get back to you shortly.";
+  if (apiKey) {
+    try {
+      const res = await fetch("https://api.perplexity.ai/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "sonar",
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: opts.incomingText },
+          ],
+        }),
+      });
+      if (res.ok) {
+        const j: any = await res.json();
+        const reply = j?.choices?.[0]?.message?.content?.toString().trim();
+        if (reply) return reply;
+      }
+    } catch {
+      // fallback
+    }
+  }
 
-  const system = `You are the customer support agent for "${opts.businessName}".
-Reply concisely (max 3 short sentences), warmly, and in the customer's language.
-${opts.businessDesc ? `About the business: ${opts.businessDesc}` : ""}
-${opts.website ? `Website: ${opts.website}` : ""}
-Never invent prices or availability you don't know — say you'll check and follow up.`;
-
-  const res = await fetch("https://api.perplexity.ai/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "sonar",
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: opts.incomingText },
-      ],
-    }),
-  });
-  if (!res.ok) return "Thanks — we've received your message and will reply soon.";
-  const j: any = await res.json();
-  return j?.choices?.[0]?.message?.content?.toString().trim() || "Thanks — we'll be in touch.";
+  return `Hello! Thanks for messaging ${opts.businessName}. We have received your inquiry and will assist you shortly. Let us know if you need any specific details!`;
 }
 
 async function sendWhatsAppMessage(to: string, body: string) {

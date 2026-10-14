@@ -54,7 +54,7 @@ const voiceQuerySchema = z.object({
 
 export const askVoiceAssistant = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => voiceQuerySchema.parse(d))
+  .validator((d: unknown) => voiceQuerySchema.parse(d))
   .handler(async ({ data }): Promise<{
     text: string;
     speechText: string;
@@ -333,7 +333,7 @@ CRITICAL RULES:
 
 /** Dedicated neural speech-to-text server function using Gemini audio models */
 export const transcribeAudio = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         audioDataUrl: z.string(),

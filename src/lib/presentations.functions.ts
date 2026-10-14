@@ -149,7 +149,7 @@ export const listPresentations = createServerFn({ method: "GET" })
 
 export const getPresentation = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ context, data }) => {
     try {
       const { data: row, error } = await context.supabase
@@ -179,7 +179,7 @@ export const getPresentation = createServerFn({ method: "GET" })
 
 export const deletePresentation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ context, data }) => {
     try {
       await context.supabase.from("presentations").delete().eq("id", data.id);
@@ -192,7 +192,7 @@ export const deletePresentation = createServerFn({ method: "POST" })
 
 export const updatePresentation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string(),
@@ -238,7 +238,7 @@ export const updatePresentation = createServerFn({ method: "POST" })
 
 export const generatePresentation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         topic: z.string().trim().min(3).max(500),
@@ -313,7 +313,7 @@ export const generatePresentation = createServerFn({ method: "POST" })
 
 export const generatePresentationVideo = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string().uuid(),
@@ -383,7 +383,7 @@ export const generatePresentationVideo = createServerFn({ method: "POST" })
 
 export const generateSlideImage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string(),
@@ -434,7 +434,7 @@ export const generateSlideImage = createServerFn({ method: "POST" })
 /** Illustrate every slide that has no image yet — the "Add images" button. */
 export const illustrateDeck = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ context, data }) => {
     let slides: Slide[] = [];
     let topic = "";
@@ -507,7 +507,7 @@ export const illustrateDeck = createServerFn({ method: "POST" })
 /** Publish a deck to the public Templates gallery. */
 export const publishPresentation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string(),
@@ -533,7 +533,7 @@ export const publishPresentation = createServerFn({ method: "POST" })
 
 export const unpublishPresentation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ context, data }) => {
     try {
       await context.supabase
@@ -549,7 +549,7 @@ export const unpublishPresentation = createServerFn({ method: "POST" })
 /** Browse everything the community published, with topic search. */
 export const listTemplates = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ search: z.string().trim().max(120).default("") }).parse(d),
   )
   .handler(async ({ context, data }) => {
@@ -616,7 +616,7 @@ export const listTemplates = createServerFn({ method: "GET" })
 /** Copy a published template into the current user's own decks. */
 export const useTemplate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ context, data }) => {
     let title = "Copied Template";
     let topic = "General";

@@ -22,6 +22,7 @@ import {
   getLocalThreads,
   saveLocalThreads,
   deleteLocalThread,
+  saveLocalMessages,
   formatHistoryDate,
   type LocalThread,
 } from "@/lib/chat-store";
@@ -51,6 +52,9 @@ import {
   Share2,
   Folder,
   FolderPlus,
+  Home,
+  LogIn,
+  User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -123,7 +127,8 @@ function ChatLayout() {
 
     // Only merge server threads if the user is NOT a brand-new user with empty history
     if (!activeUser?.isNewUser) {
-      for (const st of serverThreads as any[]) {
+      const safeServerThreads = Array.isArray(serverThreads) ? serverThreads : [];
+      for (const st of safeServerThreads) {
         if (st.id && st.id !== "default") {
           const existing = map.get(st.id);
           if (existing || !activeUser) {
@@ -221,9 +226,24 @@ function ChatLayout() {
   });
 
   const clearMut = useMutation({
-    mutationFn: (id: string) => clearFn({ data: { id } }),
+    mutationFn: async (id: string) => {
+      saveLocalMessages(id, []);
+      try {
+        await clearFn({ data: { id } });
+      } catch {
+        // local clear still succeeds
+      }
+      return id;
+    },
     onSuccess: (_r, id) => {
       qc.invalidateQueries({ queryKey: ["messages", id] });
+      window.dispatchEvent(new CustomEvent("myaipro_chat_cleared", { detail: id }));
+      toast.success("Chat messages cleared");
+      setMenuOpen(false);
+    },
+    onError: (_e, id) => {
+      saveLocalMessages(id, []);
+      window.dispatchEvent(new CustomEvent("myaipro_chat_cleared", { detail: id }));
       toast.success("Chat messages cleared");
       setMenuOpen(false);
     },
@@ -477,6 +497,16 @@ function ChatLayout() {
 
         {/* App Switcher & Sign Out */}
         <div className="border-t border-border/60 p-2.5 space-y-0.5 bg-canvas/40">
+          <button
+            onClick={() => {
+              setDrawerOpen(false);
+              navigate({ to: "/chat/$threadId", params: { threadId: "default" } });
+            }}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-canvas transition text-left"
+          >
+            <Home className="size-3.5 text-brand" /> Home
+          </button>
+
           <Link
             to="/presentations"
             onClick={() => setDrawerOpen(false)}
@@ -527,33 +557,80 @@ function ChatLayout() {
             <span className="hidden sm:inline text-xs font-medium text-muted-foreground">History</span>
           </button>
 
-          <div className="flex items-center gap-2 pl-1">
-            <h1 className="font-serif text-lg font-bold tracking-tight text-ink flex items-center gap-1.5">
+          <button
+            onClick={() => {
+              navigate({ to: "/chat/$threadId", params: { threadId: "default" } });
+            }}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition active:scale-95",
+              activeThreadId === "default"
+                ? "bg-brand/10 text-brand font-semibold"
+                : "text-muted-foreground hover:bg-surface hover:text-ink"
+            )}
+            aria-label="Home Screen"
+            title="Home Screen"
+          >
+            <Home className="size-4" />
+            <span className="hidden sm:inline">Home</span>
+          </button>
+
+          <Link
+            to="/chat/$threadId"
+            params={{ threadId: "default" }}
+            className="flex items-center gap-2 pl-1 hover:opacity-85 transition"
+            title="Go to Home Screen"
+          >
+            <h1 className="font-serif text-lg font-bold tracking-tight text-ink flex items-center gap-1.5 cursor-pointer">
               <span>My AI</span>
               <span className="inline-flex items-center rounded-full bg-brand/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand">
                 1.1
               </span>
             </h1>
-            {currentThread && currentThread.title && currentThread.title !== "New conversation" ? (
-              <span className="hidden md:inline-block max-w-[240px] truncate text-xs text-muted-foreground/80 border-l border-border/80 pl-2">
-                {currentThread.title}
-              </span>
-            ) : null}
-          </div>
+          </Link>
+          {currentThread && currentThread.title && currentThread.title !== "New conversation" ? (
+            <span className="hidden md:inline-block max-w-[240px] truncate text-xs text-muted-foreground/80 border-l border-border/80 pl-2">
+              {currentThread.title}
+            </span>
+          ) : null}
         </div>
 
-        {/* Header Right Actions: New Chat + Three Dots Menu */}
-        <div className="flex items-center gap-1">
+        {/* Header Right Actions: New Chat + Sign In / Account + Three Dots Menu */}
+        <div className="flex items-center gap-1.5">
           {/* Quick New Chat button */}
           <button
             onClick={() => createMut.mutate()}
             disabled={createMut.isPending}
-            className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium bg-brand/10 text-brand hover:bg-brand/20 active:scale-95 transition disabled:opacity-60"
+            className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium bg-brand/10 text-brand hover:bg-brand/20 active:scale-95 transition disabled:opacity-60 cursor-pointer"
             title="Start New Chat (saves current)"
           >
             <Plus className="size-4" />
             <span className="hidden xs:inline">New chat</span>
           </button>
+
+          {/* User Sign In / Account Badge */}
+          {activeUser ? (
+            <Link
+              to="/auth"
+              className="flex items-center gap-1.5 rounded-lg border border-border/80 bg-surface/80 px-2 py-1 text-xs text-ink hover:bg-surface transition"
+              title={`Signed in as ${activeUser.displayName || activeUser.email}`}
+            >
+              <div className="flex size-5 items-center justify-center rounded-full bg-brand text-brand-foreground text-[10px] font-bold">
+                {activeUser.displayName ? activeUser.displayName.charAt(0).toUpperCase() : activeUser.email.charAt(0).toUpperCase()}
+              </div>
+              <span className="hidden md:inline max-w-[80px] truncate font-medium">
+                {activeUser.displayName || activeUser.email.split("@")[0]}
+              </span>
+            </Link>
+          ) : (
+            <Link
+              to="/auth"
+              className="flex items-center gap-1.5 rounded-lg border border-brand/40 bg-brand/10 px-2.5 py-1.5 text-xs font-semibold text-brand hover:bg-brand/20 active:scale-95 transition"
+              title="Sign in or register to sync your chats"
+            >
+              <LogIn className="size-3.5" />
+              <span>Sign in</span>
+            </Link>
+          )}
 
           {/* Three Dots Menu Button */}
           <div className="relative" ref={menuRef}>
@@ -572,6 +649,30 @@ function ChatLayout() {
             {/* Three Dots Dropdown Menu */}
             {menuOpen && (
               <div className="absolute right-0 top-full mt-1.5 w-60 rounded-xl border border-border/80 bg-surface p-1.5 shadow-xl ring-1 ring-black/5 z-50 animate-in fade-in zoom-in-95 duration-150">
+                {activeUser ? (
+                  <div className="px-3 py-2 text-xs border-b border-border/60 mb-1">
+                    <div className="font-semibold text-ink truncate">{activeUser.displayName || "My AI User"}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{activeUser.email}</div>
+                  </div>
+                ) : (
+                  <>
+                    <Link
+                      to="/auth"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/10 transition text-left"
+                    >
+                      <LogIn className="size-4 text-brand" />
+                      <div>
+                        <div>Sign In / Register</div>
+                        <div className="text-[10px] text-muted-foreground font-normal">
+                          Sync chats & history across devices
+                        </div>
+                      </div>
+                    </Link>
+                    <div className="my-1 border-t border-border/60" />
+                  </>
+                )}
+
                 <button
                   onClick={() => {
                     setMenuOpen(false);
@@ -666,33 +767,31 @@ function ChatLayout() {
 
                 <div className="my-1 border-t border-border/60" />
 
-                {activeThreadId && activeThreadId !== "default" && (
-                  <>
-                    <button
-                      onClick={() => {
-                        if (confirm("Clear all messages in this conversation?")) {
-                          clearMut.mutate(activeThreadId);
-                        }
-                      }}
-                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-ink hover:bg-canvas transition text-left"
-                    >
-                      <RotateCcw className="size-4 text-muted-foreground" />
-                      <span>Clear messages</span>
-                    </button>
+                <button
+                  onClick={() => {
+                    if (confirm("Clear all messages in this conversation?")) {
+                      clearMut.mutate(activeThreadId);
+                    }
+                  }}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-ink hover:bg-canvas transition text-left cursor-pointer"
+                >
+                  <RotateCcw className="size-4 text-muted-foreground" />
+                  <span>Clear messages</span>
+                </button>
 
-                    <button
-                      onClick={() => {
-                        setMenuOpen(false);
-                        if (confirm("Delete this conversation from history?")) {
-                          deleteMut.mutate(activeThreadId);
-                        }
-                      }}
-                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 transition text-left"
-                    >
-                      <Trash2 className="size-4" />
-                      <span>Delete conversation</span>
-                    </button>
-                  </>
+                {activeThreadId && activeThreadId !== "default" && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      if (confirm("Delete this conversation from history?")) {
+                        deleteMut.mutate(activeThreadId);
+                      }
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 transition text-left cursor-pointer"
+                  >
+                    <Trash2 className="size-4" />
+                    <span>Delete conversation</span>
+                  </button>
                 )}
               </div>
             )}
@@ -702,6 +801,8 @@ function ChatLayout() {
 
       {/* Main Chat Screen Outlet */}
       <Outlet />
+
+
     </div>
   );
 }

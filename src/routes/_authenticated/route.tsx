@@ -1,11 +1,11 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { auth } from "@/lib/firebase";
 import { getActiveUserSession } from "@/lib/user-session";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: () => {
-    // 1. Check active user session from our unified auth store
     if (typeof window !== "undefined") {
+      // 1. Check active session from storage
       const activeSession = getActiveUserSession();
       if (activeSession) {
         return {
@@ -21,7 +21,7 @@ export const Route = createFileRoute("/_authenticated")({
         };
       }
 
-      // 2. Check if user is logged into Firebase
+      // 2. Check Firebase auth currentUser
       if (auth.currentUser) {
         return {
           user: {
@@ -40,25 +40,8 @@ export const Route = createFileRoute("/_authenticated")({
       }
     }
 
-    // 3. Fallback guest session when browsing before explicit login
-    let guestId = "guest-user";
-    if (typeof window !== "undefined") {
-      guestId =
-        localStorage.getItem("myaipro_guest_id") ||
-        `guest-${Math.random().toString(36).slice(2, 10)}`;
-      localStorage.setItem("myaipro_guest_id", guestId);
-    }
-    return {
-      user: {
-        id: guestId,
-        email: "guest@myaipro.app",
-        isNewUser: false,
-        user_metadata: {
-          full_name: "Guest",
-          avatar_url: null,
-        },
-      },
-    };
+    // Without logging in, they cannot chat with the user -> redirect to /auth
+    throw redirect({ to: "/auth" });
   },
   component: () => <Outlet />,
 });

@@ -431,6 +431,37 @@ export function YouTubePlayerCard({ id, title }: { id: string; title?: string })
   );
 }
 
+function tokenizeLine(line: string): React.ReactNode {
+  const tokenRegex = /(\/\/[^\n]*|#[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b(?:import|export|from|as|default|const|let|var|function|return|if|else|switch|case|break|continue|for|while|do|async|await|class|extends|new|this|typeof|instanceof|try|catch|finally|throw|def|elif|lambda|pass|yield|with|interface|type|enum|public|private|protected|readonly|implements|package)\b|\b\d+(?:\.\d+)?\b|\b[A-Z][a-zA-Z0-9_]*\b|[{}()[\].,;:+\-*/%=<>!&|^~?]+|[^\s{}()[\].,;:+\-*/%=<>!&|^~?]+|\s+)/g;
+
+  const parts: React.ReactNode[] = [];
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = tokenRegex.exec(line)) !== null) {
+    const text = match[0];
+    if (text.startsWith("//") || text.startsWith("#")) {
+      parts.push(<span key={key++} className="text-zinc-500 italic">{text}</span>);
+    } else if (text.startsWith('"') || text.startsWith("'") || text.startsWith("`")) {
+      parts.push(<span key={key++} className="text-emerald-300">{text}</span>);
+    } else if (
+      /^(import|export|from|as|default|const|let|var|function|return|if|else|switch|case|break|continue|for|while|do|async|await|class|extends|new|this|typeof|instanceof|try|catch|finally|throw|def|elif|lambda|pass|yield|with|interface|type|enum|public|private|protected|readonly|implements|package)$/.test(text)
+    ) {
+      parts.push(<span key={key++} className="text-purple-400 font-semibold">{text}</span>);
+    } else if (/^(true|false|True|False|null|undefined|None)$/.test(text)) {
+      parts.push(<span key={key++} className="text-amber-400 font-medium">{text}</span>);
+    } else if (/^\d+(?:\.\d+)?$/.test(text)) {
+      parts.push(<span key={key++} className="text-amber-300">{text}</span>);
+    } else if (/^[A-Z][a-zA-Z0-9_]*$/.test(text)) {
+      parts.push(<span key={key++} className="text-sky-300 font-medium">{text}</span>);
+    } else {
+      parts.push(<span key={key++} className="text-zinc-200">{text}</span>);
+    }
+  }
+
+  return parts.length > 0 ? parts : line;
+}
+
 function CodeBlock({
   className,
   children,
@@ -439,8 +470,11 @@ function CodeBlock({
   children?: React.ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
-  const lang = className?.replace("language-", "") || "code";
-  const text = String(children ?? "");
+  const [showLineNumbers, setShowLineNumbers] = useState(true);
+  const [showPreview, setShowPreview] = useState(false);
+  const rawLang = className?.replace("language-", "").toLowerCase() || "code";
+  const lang = rawLang.split(":")[0];
+  const text = String(children ?? "").replace(/\n$/, "");
 
   if (lang === "youtube") {
     const d = parseKeyValue(text);
@@ -472,28 +506,153 @@ function CodeBlock({
     }
   }
 
+  const lines = text.split("\n");
+  const isHtmlOrSvg = lang === "html" || lang === "svg" || lang === "xml";
+
+  // Derive smart filename
+  let filename = "";
+  const firstLineMatch = lines[0]?.match(/^(?:\/{2,3}|#)\s*(?:filename|file):\s*([a-zA-Z0-9_.-]+)/i);
+  if (firstLineMatch) {
+    filename = firstLineMatch[1];
+  } else if (text.includes("whatsapp") || text.includes("baileys") || text.includes("messaging_product")) {
+    filename = lang.includes("py") ? "whatsapp_bot.py" : "whatsapp_bot.js";
+  } else if (lang === "python" || lang === "py") {
+    filename = "main.py";
+  } else if (lang === "typescript" || lang === "ts") {
+    filename = "app.ts";
+  } else if (lang === "javascript" || lang === "js") {
+    filename = "index.js";
+  } else if (lang === "html") {
+    filename = "index.html";
+  } else if (lang === "json") {
+    filename = "package.json";
+  }
+
+  function handleDownload() {
+    const extMap: Record<string, string> = {
+      python: ".py", py: ".py",
+      typescript: ".ts", ts: ".ts", tsx: ".tsx",
+      javascript: ".js", js: ".js", jsx: ".jsx",
+      html: ".html", css: ".css", json: ".json",
+      sql: ".sql", sh: ".sh", bash: ".sh",
+    };
+    const targetName = filename || `code_${Date.now()}${extMap[lang] || ".txt"}`;
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = targetName;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Downloaded ${targetName}`);
+  }
+
   return (
-    <div className="group relative my-2 overflow-hidden rounded-xl bg-ink">
-      <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
-        <span className="text-[10px] uppercase tracking-widest text-white/50">
-          {lang}
-        </span>
-        <button
-          onClick={async () => {
-            await navigator.clipboard.writeText(text);
-            setCopied(true);
-            toast.success("Code copied");
-            setTimeout(() => setCopied(false), 1500);
-          }}
-          className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-white/80 hover:bg-white/10"
-        >
-          {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-          {copied ? "Copied" : "Copy"}
-        </button>
+    <div className="group relative my-3 overflow-hidden rounded-2xl bg-[#0f1117] ring-1 ring-white/10 shadow-xl font-mono">
+      {/* IDE Header Bar */}
+      <div className="flex items-center justify-between border-b border-white/10 bg-[#161822] px-3.5 py-2">
+        <div className="flex items-center gap-2">
+          {/* Mac window dots */}
+          <div className="flex items-center gap-1.5 mr-1">
+            <span className="size-2.5 rounded-full bg-[#ff5f56]" />
+            <span className="size-2.5 rounded-full bg-[#ffbd2e]" />
+            <span className="size-2.5 rounded-full bg-[#27c93f]" />
+          </div>
+
+          {/* Language Pill & Optional Filename */}
+          <span className="rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white/80">
+            {lang}
+          </span>
+          {filename && (
+            <span className="text-[11px] font-medium text-zinc-400">
+              {filename}
+            </span>
+          )}
+          <span className="text-[10px] text-zinc-500 font-sans">
+            {lines.length} lines
+          </span>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-1.5">
+          {isHtmlOrSvg && (
+            <button
+              type="button"
+              onClick={() => setShowPreview((v) => !v)}
+              className={cn(
+                "flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-sans transition",
+                showPreview ? "bg-brand text-brand-foreground" : "text-white/70 hover:bg-white/10"
+              )}
+              title="Toggle Live Preview"
+            >
+              <Eye className="size-3" />
+              <span>{showPreview ? "Code" : "Preview"}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowLineNumbers((v) => !v)}
+            className="rounded-md p-1 text-white/60 hover:bg-white/10 hover:text-white transition"
+            title={showLineNumbers ? "Hide line numbers" : "Show line numbers"}
+          >
+            <span className="text-[10px] font-bold">#</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="rounded-md p-1 text-white/60 hover:bg-white/10 hover:text-white transition"
+            title="Download file"
+          >
+            <Download className="size-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              await navigator.clipboard.writeText(text);
+              setCopied(true);
+              toast.success("Code copied to clipboard!");
+              setTimeout(() => setCopied(false), 1600);
+            }}
+            className="flex items-center gap-1 rounded-md bg-white/10 px-2.5 py-1 text-[11px] font-sans font-medium text-white hover:bg-white/20 transition cursor-pointer active:scale-95"
+            title="Copy all code"
+          >
+            {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
+            <span>{copied ? "Copied" : "Copy"}</span>
+          </button>
+        </div>
       </div>
-      <pre className="overflow-x-auto p-3 text-xs leading-relaxed text-white">
-        <code>{text}</code>
-      </pre>
+
+      {/* Code Body / Preview */}
+      {showPreview && isHtmlOrSvg ? (
+        <div className="p-3 bg-white rounded-b-2xl">
+          <iframe
+            srcDoc={text}
+            title="Code Preview"
+            sandbox="allow-scripts"
+            className="w-full h-64 border-0 rounded-lg"
+          />
+        </div>
+      ) : (
+        <div className="overflow-x-auto p-4 text-[12.5px] leading-relaxed text-zinc-100 selection:bg-purple-500/30">
+          <div className="table w-full border-collapse">
+            {lines.map((l, idx) => (
+              <div key={idx} className="table-row hover:bg-white/5 transition-colors">
+                {showLineNumbers && (
+                  <span className="table-cell select-none pr-4 text-right text-zinc-600 font-mono text-[11px] w-8">
+                    {idx + 1}
+                  </span>
+                )}
+                <span className="table-cell whitespace-pre font-mono">
+                  {tokenizeLine(l)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -505,6 +664,7 @@ export function RichMessage({
   content: string;
   variant?: "default" | "dark";
 }) {
+  const safeContent = typeof content === "string" ? content : String(content ?? "");
   const isDark = variant === "dark";
   // 1. Detect markdown links to YouTube: [title](https://youtube.com/...)
   const mdYtRe =
@@ -514,7 +674,7 @@ export function RichMessage({
   const seenIds = new Set<string>();
 
   let mdMatch;
-  while ((mdMatch = mdYtRe.exec(content)) !== null) {
+  while ((mdMatch = mdYtRe.exec(safeContent)) !== null) {
     const id = extractYouTubeId(mdMatch[2]);
     if (id && !seenIds.has(id)) {
       seenIds.add(id);
@@ -527,7 +687,7 @@ export function RichMessage({
     /(https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)[a-zA-Z0-9_-]{11}[^\s)]*)/gi;
 
   let rawMatch;
-  while ((rawMatch = rawYtRe.exec(content)) !== null) {
+  while ((rawMatch = rawYtRe.exec(safeContent)) !== null) {
     const id = extractYouTubeId(rawMatch[1]);
     if (id && !seenIds.has(id)) {
       seenIds.add(id);
@@ -536,7 +696,7 @@ export function RichMessage({
   }
 
   // Clean out standalone YouTube URLs from markdown to avoid clutter (only when YouTube URLs were found)
-  let cleaned = ytCards.length > 0 ? content.replace(rawYtRe, "") : content;
+  let cleaned = ytCards.length > 0 ? safeContent.replace(rawYtRe, "") : safeContent;
   if (ytCards.length > 0) {
     cleaned = cleaned.replace(/\[\s*\]\(\s*\)/g, "");
   }
@@ -666,13 +826,14 @@ export function RichMessage({
       ))}
 
       {/* Interactive Document & Spreadsheet Action Bar + Live Editors */}
-      <DocumentAndSpreadsheetStudio content={content} />
+      <DocumentAndSpreadsheetStudio content={safeContent} />
     </div>
   );
 }
 
-function DocumentAndSpreadsheetStudio({ content }: { content: string }) {
-  const initialSheet = extractSpreadsheetFromContent(content);
+function DocumentAndSpreadsheetStudio({ content = "" }: { content?: string | null }) {
+  const safeContent = typeof content === "string" ? content : String(content ?? "");
+  const initialSheet = extractSpreadsheetFromContent(safeContent);
   const [sheetTitle, setSheetTitle] = useState(initialSheet?.title || "Data_Spreadsheet");
   const [headers, setHeaders] = useState<string[]>(
     initialSheet?.headers || ["Item", "Category", "Value", "Status"],
@@ -689,21 +850,21 @@ function DocumentAndSpreadsheetStudio({ content }: { content: string }) {
 
   const [pdfOpen, setPdfOpen] = useState(false);
   const [pdfTitle, setPdfTitle] = useState(() => {
-    const m = content.match(/^#{1,3}\s+(.+)$/m);
+    const m = safeContent.match(/^#{1,3}\s+(.+)$/m);
     return m ? m[1].replace(/\*\*/g, "").trim().slice(0, 60) : "AI_Document_Report";
   });
-  const [pdfBody, setPdfBody] = useState(content);
+  const [pdfBody, setPdfBody] = useState(safeContent);
 
   useEffect(() => {
-    setPdfBody(content);
-    const extracted = extractSpreadsheetFromContent(content);
+    setPdfBody(safeContent);
+    const extracted = extractSpreadsheetFromContent(safeContent);
     if (extracted) {
       setSheetTitle(extracted.title);
       setHeaders(extracted.headers);
       setRows(extracted.rows);
       setSheetOpen(true);
     }
-  }, [content]);
+  }, [safeContent]);
 
   function updateCell(rIdx: number, cIdx: number, val: string) {
     setRows((prev) =>
@@ -757,13 +918,14 @@ function DocumentAndSpreadsheetStudio({ content }: { content: string }) {
   }
 
   function handleConvertTextToSheet() {
-    const extracted = extractSpreadsheetFromContent(pdfBody);
+    const safePdfBody = pdfBody || "";
+    const extracted = extractSpreadsheetFromContent(safePdfBody);
     if (extracted) {
       setSheetTitle(extracted.title);
       setHeaders(extracted.headers);
       setRows(extracted.rows);
     } else {
-      const bulletLines = pdfBody
+      const bulletLines = safePdfBody
         .split("\n")
         .map((l) => l.trim())
         .filter((l) => l.length > 0 && !l.startsWith("#"))

@@ -79,7 +79,13 @@ export async function askModel(
 
       const systemPrompt = `${system}\n\nCurrent Date: October 2026. For questions regarding recent elections, current leaders, recent events, breaking news, or live information, provide real-time up-to-date facts without delay. Recent elections include the 2024 US Presidential Election won by Donald Trump, 2024 India General Election won by Narendra Modi / NDA, 2024 UK General Election won by Keir Starmer / Labour, and 2024 Mexico Election won by Claudia Sheinbaum. Never say no recent election happened.`;
 
-      for (const m of ["gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-2.5-flash"]) {
+      for (const m of [
+        "gemini-3.1-flash-lite",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-3.8-flash",
+        "gemini-flash-latest",
+        "gemini-3.1-pro-preview",
+      ]) {
         try {
           const res = await ai.models.generateContent({
             model: m,
@@ -503,10 +509,11 @@ export async function askCode(
       });
 
       const candidateModels = [
-        "gemini-3-flash-preview",
-        "gemini-3.1-pro-preview",
+        "gemini-3.1-flash-lite",
         "gemini-3.1-flash-lite-preview",
-        "gemini-2.5-flash",
+        "gemini-3.8-flash",
+        "gemini-flash-latest",
+        "gemini-3.1-pro-preview",
       ];
 
       for (const m of candidateModels) {
@@ -577,9 +584,11 @@ export async function askVisionCode(
       parts.push({ text: user });
 
       const visionModels = [
-        "gemini-3-flash-preview",
+        "gemini-3.1-flash-lite",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-3.8-flash",
+        "gemini-flash-latest",
         "gemini-3.1-pro-preview",
-        "gemini-2.5-flash",
       ];
 
       for (const m of visionModels) {

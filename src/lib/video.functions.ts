@@ -8,7 +8,7 @@ export type Scene = { caption: string; image_prompt: string };
 /** Step 1 — storyboard the prompt into shots so the UI can show a progress timeline. */
 export const storyboardVideo = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         prompt: z.string().trim().min(3).max(500),
@@ -34,7 +34,7 @@ export const storyboardVideo = createServerFn({ method: "POST" })
 /** Step 2 — render one shot. Called per frame so failures can be retried individually. */
 export const renderVideoFrame = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         image_prompt: z.string().trim().min(3).max(1200),
@@ -53,7 +53,7 @@ export const renderVideoFrame = createServerFn({ method: "POST" })
 /** Edit a specific video frame shot from a text edit prompt */
 export const editVideoFrame = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         image_url: z.string().min(1),
@@ -78,7 +78,7 @@ export const editVideoFrame = createServerFn({ method: "POST" })
 /** Image mode — create a single still from a prompt, optimized for speed and high-volume use cases. */
 export const generateStill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         prompt: z.string().trim().min(2).max(1200),
@@ -101,7 +101,7 @@ export const generateStill = createServerFn({ method: "POST" })
 /** Edit an existing still image from a text prompt */
 export const editStill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         image_url: z.string().min(1),

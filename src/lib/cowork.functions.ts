@@ -87,7 +87,7 @@ const coworkInputSchema = z.object({
 
 export const executeCoworkTask = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => coworkInputSchema.parse(d))
+  .validator((d: unknown) => coworkInputSchema.parse(d))
   .handler(async ({ data }): Promise<CoworkResponse> => {
     const prompt = data.prompt;
     const model = (data.model || "myai") as ModelId;

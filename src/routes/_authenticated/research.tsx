@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Telescope,
@@ -16,6 +16,17 @@ import {
   Paperclip,
   X,
   Monitor,
+  ChevronDown,
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Share2,
+  FileText,
+  Sparkles,
+  ListTree,
+  Menu,
+  Compass,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { TopTabs } from "@/components/top-tabs";
@@ -42,6 +53,117 @@ export const Route = createFileRoute("/_authenticated/research")({
 });
 
 type SweepResult = { query: string; notes: string; sources: string };
+
+type ResearchSection = {
+  id: string;
+  title: string;
+  content: string;
+  level: number;
+};
+
+const SAMPLE_RESEARCH_TOPIC = "Autonomous AI Agents in Enterprise Software (2026-2028 Architecture)";
+const SAMPLE_RESEARCH_REPORT = `## Executive Summary & Market Drivers
+Autonomous AI agent architectures have shifted from reactive single-prompt LLM wrappers to multi-agent orchestrated state machines. Enterprise adoption in 2026 is accelerating at an annualized rate of 42%, primarily driven by reasoning-first foundation models, deterministic tool execution, and local sandbox verification.
+
+### Core Strategic Highlights
+- **Shift from RAG to Grounded Tool Loops**: Retrieval-augmented generation is now a baseline; high-value enterprise agents employ multi-turn cognitive loops (Hypothesize -> Tool Probe -> Synthesize -> Verify).
+- **Latency & Reliability Breakthroughs**: Sub-second TTFT combined with speculatively executed code sandboxes has brought tool success rates from 71% in 2024 to over 96.8% in late 2026.
+- **Enterprise Spend Allocation**: 68% of Fortune 500 engineering organizations report active budget migration from traditional robotic process automation (RPA) towards autonomous coding and research agents.
+
+## Architectural Evolution: Single-Shot to Multi-Agent Swarms
+Modern agentic architectures organize specialized agents into hierarchical graphs rather than monolithic prompt orchestrators:
+
+1. **Strategic Planner Agent**: Decomposes high-level ambiguous user objectives into Directed Acyclic Graphs (DAGs) of executable subtasks with explicit dependencies and timeout budgets.
+2. **Deterministic Tool Dispatchers**: Safe sandboxed environments with capability-based security (limiting file system, network egress, and credential exposure).
+3. **Critic & Verifier Agents**: Double-check generated code against AST parsers, runtime type checkers, and test suites prior to user presentation.
+
+### Performance Benchmarks (SWE-bench & WebArena 2026)
+Enterprise benchmarks illustrate a decisive leap:
+- Multi-agent cognitive architecture: **78.4% resolution rate**
+- Single-turn chain-of-thought: **49.1% resolution rate**
+- Legacy fine-tuned models: **31.2% resolution rate**
+
+## Production Challenges, Guardrails & Security
+Despite technical advances, enterprise deployment requires rigorous containment protocols:
+
+- **Egress & Credential Poisoning**: Indirect prompt injection via external web crawls remains the primary vector. Modern defenses employ isolated unprivileged crawler agents that sanitize scraped HTML into semantic JSON before handing off to the reasoning core.
+- **Runaway Token Costs & Infinite Loops**: Production runtimes mandate strict circuit breakers, deterministic step limits (e.g., maximum 12 tool iterations per subtask), and adaptive budget allocation based on task complexity.
+- **Human-in-the-Loop Thresholds**: Destructive actions (e.g. database schema migrations, payments, public publishing) require cryptographically verified human approval steps.
+
+## Future Trajectory & Strategic Recommendations
+Looking toward 2027 and 2028, the convergence of multimodal reasoning and native code generation tools points toward self-healing software platforms and zero-code continuous delivery pipelines.
+
+### Actionable Next Steps
+1. **Adopt Standardized Tool Protocols**: Implement standardized tool definitions across models to avoid vendor lock-in.
+2. **Isolate Sandboxed Execution**: Ensure all dynamically generated scripts run inside ephemeral micro-VMs or secure WebAssembly runtimes.
+3. **Implement Telemetry for Agentic Reasoning**: Monitor intermediate reasoning traces and tool call latencies to optimize prompt budgets.
+
+## References & Verified Citations
+1. Deep Research Intelligence Group (2026). *The State of Autonomous Software Engineering and Agent Workflows*.
+2. Stanford Institute for Human-Centered Artificial Intelligence (HAI) 2026 Report on Foundation Agent Reliability.
+3. IEEE Computer Society (Vol. 59, No. 3). *Formal Verification and Sandboxing of Generative AI Code Agents*.
+4. ACM Transactions on Software Engineering and Methodology (TOSEM 2026). *Evaluating Autonomous Multi-Agent Synthesis in Mission-Critical Systems*.`;
+
+function parseReportSections(markdown: string, fallbackTopic: string): ResearchSection[] {
+  if (!markdown) return [];
+
+  const lines = markdown.split("\n");
+  const sections: ResearchSection[] = [];
+  let currentTitle = "Executive Summary";
+  let currentLevel = 2;
+  let currentContent: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const headerMatch = line.match(/^(#{1,3})\s+(.+)$/);
+    if (headerMatch) {
+      if (currentContent.length > 0 || sections.length > 0) {
+        sections.push({
+          id: `section-${sections.length + 1}`,
+          title: currentTitle.replace(/[*_`]/g, "").trim(),
+          content: currentContent.join("\n").trim(),
+          level: currentLevel,
+        });
+        currentContent = [];
+      }
+      currentLevel = headerMatch[1].length;
+      currentTitle = headerMatch[2].replace(/[*_`]/g, "").trim();
+    } else {
+      currentContent.push(line);
+    }
+  }
+
+  if (currentContent.length > 0 || sections.length === 0) {
+    sections.push({
+      id: `section-${sections.length + 1}`,
+      title: currentTitle.replace(/[*_`]/g, "").trim() || "Findings & Analysis",
+      content: currentContent.join("\n").trim(),
+      level: currentLevel,
+    });
+  }
+
+  // Fallback splitting if there are fewer than 2 headers
+  if (sections.length <= 1) {
+    const paras = markdown.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
+    if (paras.length >= 4) {
+      const chunkSize = Math.ceil(paras.length / 4);
+      const titles = [
+        "Executive Summary & Overview",
+        "Key Market & Field Findings",
+        "Deep Technical Analysis",
+        "Strategic Trajectory & Sources",
+      ];
+      return titles.map((t, idx) => ({
+        id: `section-${idx + 1}`,
+        title: t,
+        content: paras.slice(idx * chunkSize, (idx + 1) * chunkSize).join("\n\n"),
+        level: 2,
+      }));
+    }
+  }
+
+  return sections;
+}
 
 function baseQueries(topic: string): string[] {
   return [
@@ -85,6 +207,16 @@ function ResearchPage() {
   const [elapsed, setElapsed] = useState(0);
   const [log, setLog] = useState<string[]>([]);
   const cancelRef = useRef(false);
+
+  // Deep Research Sidebar, Outline & Moving Ball State
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeSectionIndex, setActiveSectionIndex] = useState(0);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [ballTop, setBallTop] = useState(24);
+  const railRef = useRef<HTMLDivElement>(null);
+  const nodeRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const articleRef = useRef<HTMLDivElement>(null);
+  const sectionRefs = useRef<(HTMLElement | null)[]>([]);
 
   const [attachments, setAttachments] = useState<{ name: string; type: string }[]>([]);
   const [folderName, setFolderName] = useState<string | null>(null);
@@ -220,31 +352,310 @@ function ResearchPage() {
     setStep(0);
   }
 
+  const sections = useMemo(() => parseReportSections(report ?? "", topic), [report, topic]);
+
+  function scrollToSection(idx: number) {
+    if (idx < 0 || idx >= sections.length) return;
+    setActiveSectionIndex(idx);
+    const targetEl = sectionRefs.current[idx];
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    const nodeEl = nodeRefs.current[idx];
+    const railEl = railRef.current;
+    if (nodeEl && railEl) {
+      const railRect = railEl.getBoundingClientRect();
+      const nodeRect = nodeEl.getBoundingClientRect();
+      setBallTop(nodeRect.top - railRect.top + nodeRect.height / 2);
+    }
+  }
+
+  function handleArticleScroll() {
+    const el = articleRef.current;
+    if (!el) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const maxScroll = Math.max(1, scrollHeight - clientHeight);
+    const progress = Math.min(1, Math.max(0, scrollTop / maxScroll));
+    setScrollProgress(progress);
+
+    // Calculate active section based on section headings
+    let foundIdx = 0;
+    const containerTop = el.getBoundingClientRect().top;
+    for (let i = 0; i < sections.length; i++) {
+      const secEl = sectionRefs.current[i];
+      if (secEl) {
+        const rect = secEl.getBoundingClientRect();
+        if (rect.top - containerTop <= 160) {
+          foundIdx = i;
+        }
+      }
+    }
+    setActiveSectionIndex(foundIdx);
+
+    // Position ball along vertical rail
+    const railEl = railRef.current;
+    const nodeEl = nodeRefs.current[foundIdx];
+    if (railEl && nodeEl) {
+      const railRect = railEl.getBoundingClientRect();
+      const nodeRect = nodeEl.getBoundingClientRect();
+      const nextNode = nodeRefs.current[foundIdx + 1];
+
+      let targetY = nodeRect.top - railRect.top + nodeRect.height / 2;
+      // Interpolate smoothly between current and next node if next exists
+      if (nextNode && foundIdx < sections.length - 1) {
+        const curSecEl = sectionRefs.current[foundIdx];
+        const nextSecEl = sectionRefs.current[foundIdx + 1];
+        if (curSecEl && nextSecEl) {
+          const curTop = curSecEl.offsetTop;
+          const nextTop = nextSecEl.offsetTop;
+          const span = Math.max(1, nextTop - curTop);
+          const ratio = Math.min(1, Math.max(0, (scrollTop - curTop) / span));
+          const nextNodeRect = nextNode.getBoundingClientRect();
+          const nextTargetY = nextNodeRect.top - railRect.top + nextNodeRect.height / 2;
+          targetY = targetY + (nextTargetY - targetY) * ratio;
+        }
+      }
+      setBallTop(targetY);
+    }
+  }
+
+  function copyReport() {
+    if (!report) return;
+    navigator.clipboard.writeText(report);
+    toast.success("Research report copied to clipboard!");
+  }
+
+  useEffect(() => {
+    if (report && sections.length > 0) {
+      const timer = setTimeout(() => {
+        const nodeEl = nodeRefs.current[0];
+        const railEl = railRef.current;
+        if (nodeEl && railEl) {
+          const railRect = railEl.getBoundingClientRect();
+          const nodeRect = nodeEl.getBoundingClientRect();
+          setBallTop(nodeRect.top - railRect.top + nodeRect.height / 2);
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [report, sections]);
+
   if (report) {
     return (
-      <div className="flex h-[100dvh] flex-col bg-canvas font-sans text-ink">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-black/5 px-4">
-          <button onClick={reset} className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <ArrowLeft className="size-4" /> New
-          </button>
-          <h1 className="truncate font-serif text-lg">Research</h1>
-          <div className="flex gap-1">
-            <button onClick={download} className="p-2 text-muted-foreground hover:text-ink" aria-label="Download">
-              <Download className="size-4" />
+      <div className="flex h-[100dvh] flex-col bg-canvas font-sans text-ink overflow-hidden">
+        {/* Top Header */}
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-black/5 bg-surface/90 backdrop-blur-md px-3 sm:px-5 z-30">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={reset}
+              className="flex items-center gap-1.5 rounded-full bg-canvas border border-border/80 px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:text-ink hover:bg-surface transition cursor-pointer"
+            >
+              <ArrowLeft className="size-3.5" />
+              <span>New Research</span>
+            </button>
+
+            {/* Toggle Sidebar button */}
+            <button
+              type="button"
+              onClick={() => setSidebarOpen((v) => !v)}
+              className={cn(
+                "hidden md:flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition cursor-pointer",
+                sidebarOpen
+                  ? "border-brand/30 bg-brand/10 text-brand"
+                  : "border-border/80 bg-canvas text-muted-foreground hover:text-ink"
+              )}
+              title={sidebarOpen ? "Hide outline sidebar" : "Show outline sidebar"}
+            >
+              <ListTree className="size-3.5" />
+              <span>{sidebarOpen ? "Sidebar" : "Show Outline"}</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 truncate max-w-xs sm:max-w-md px-2">
+            <Telescope className="size-4 shrink-0 text-brand" />
+            <h1 className="truncate font-serif text-sm sm:text-base font-semibold">{topic || "Research Paper"}</h1>
+          </div>
+
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <button
+              type="button"
+              onClick={copyReport}
+              className="flex items-center gap-1 rounded-full border border-border/80 bg-canvas px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-ink hover:bg-surface transition cursor-pointer"
+              title="Copy markdown report"
+            >
+              <Copy className="size-3.5" />
+              <span className="hidden sm:inline">Copy</span>
+            </button>
+            <button
+              type="button"
+              onClick={download}
+              className="flex items-center gap-1 rounded-full border border-border/80 bg-canvas px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-ink hover:bg-surface transition cursor-pointer"
+              title="Download Markdown"
+            >
+              <Download className="size-3.5" />
+              <span className="hidden sm:inline">Download</span>
             </button>
             <a
               href={`mailto:?subject=${encodeURIComponent("Research: " + topic)}&body=${encodeURIComponent(report.slice(0, 1800))}`}
-              className="p-2 text-muted-foreground hover:text-ink"
-              aria-label="Email"
+              className="flex items-center justify-center size-8 rounded-full border border-border/80 bg-canvas text-muted-foreground hover:text-ink hover:bg-surface transition"
+              title="Email Report"
             >
-              <Mail className="size-4" />
+              <Mail className="size-3.5" />
             </a>
           </div>
         </header>
-        <div className="flex-1 overflow-y-auto px-5 py-6">
-          <article className="prose prose-sm mx-auto max-w-2xl prose-headings:font-serif">
-            <ReactMarkdown>{report}</ReactMarkdown>
-          </article>
+
+        {/* Content Body: Left Outline Sidebar with moving ball + Main Report Document */}
+        <div className="flex flex-1 min-h-0 overflow-hidden relative">
+          {/* Section Outline Sidebar with Vertical Rail & Moving Orb */}
+          {sidebarOpen && (
+            <aside className="w-72 sm:w-80 shrink-0 border-r border-black/5 bg-surface/85 backdrop-blur-md flex flex-col h-full z-20 transition-all">
+              {/* Sidebar Header: Section count & Reading progress bar */}
+              <div className="p-4 border-b border-black/5">
+                <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground mb-1.5">
+                  <span className="flex items-center gap-1.5 text-ink">
+                    <Compass className="size-3.5 text-amber-500" />
+                    <span>Sections ({sections.length})</span>
+                  </span>
+                  <span className="font-mono text-[11px] text-amber-600 dark:text-amber-400 font-bold">
+                    {Math.round(scrollProgress * 100)}% read
+                  </span>
+                </div>
+                {/* Progress bar */}
+                <div className="h-1.5 w-full bg-border/40 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all duration-150"
+                    style={{ width: `${Math.round(scrollProgress * 100)}%` }}
+                  />
+                </div>
+                <div className="mt-2 text-[11px] text-muted-foreground truncate">
+                  Now reading: <span className="font-semibold text-ink">{sections[activeSectionIndex]?.title || "Overview"}</span>
+                </div>
+              </div>
+
+              {/* Scrollable Section Tree with Vertical Rail & The Moving Ball */}
+              <div className="flex-1 overflow-y-auto p-3 relative" ref={railRef}>
+                {/* Continuous Vertical Guide Line */}
+                <div className="absolute left-6 top-5 bottom-5 w-0.5 bg-black/10 dark:bg-white/10 rounded-full pointer-events-none" />
+
+                {/* THE MOVING BALL ("the ball kind of thing will be moving") */}
+                <div
+                  className="absolute left-[18px] size-4 rounded-full bg-gradient-to-tr from-amber-500 via-orange-400 to-amber-300 shadow-[0_0_14px_rgba(245,158,11,0.7)] ring-2 ring-amber-300/80 z-20 pointer-events-none transition-all duration-200 ease-out flex items-center justify-center -translate-y-1/2"
+                  style={{ top: `${ballTop}px` }}
+                >
+                  <div className="size-1.5 rounded-full bg-white shadow-xs animate-ping opacity-75" />
+                </div>
+
+                {/* Section Nodes */}
+                <div className="space-y-1 relative">
+                  {sections.map((sec, idx) => {
+                    const isActive = idx === activeSectionIndex;
+                    const isPassed = idx < activeSectionIndex;
+                    return (
+                      <button
+                        key={sec.id}
+                        type="button"
+                        ref={(el) => {
+                          nodeRefs.current[idx] = el;
+                        }}
+                        onClick={() => scrollToSection(idx)}
+                        className={cn(
+                          "group relative flex items-start gap-3 pl-9 pr-3 py-2.5 rounded-xl text-left transition-all w-full cursor-pointer",
+                          isActive
+                            ? "bg-amber-500/10 text-ink font-semibold ring-1 ring-amber-500/30"
+                            : "text-muted-foreground hover:text-ink hover:bg-canvas/60"
+                        )}
+                      >
+                        {/* Node marker on the line */}
+                        <div
+                          className={cn(
+                            "absolute left-[19px] top-4 size-2 rounded-full -translate-x-1/2 transition-all",
+                            isActive
+                              ? "bg-amber-500 ring-4 ring-amber-400/30 scale-125"
+                              : isPassed
+                              ? "bg-zinc-400 dark:bg-zinc-600"
+                              : "bg-border ring-1 ring-border"
+                          )}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono uppercase tracking-wider opacity-60">
+                              {String(idx + 1).padStart(2, "0")}
+                            </span>
+                            {isActive && (
+                              <span className="text-[9px] font-bold uppercase tracking-widest text-amber-600 bg-amber-500/15 px-1.5 py-0.5 rounded-full">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs truncate font-medium mt-0.5 leading-snug">
+                            {sec.title}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Sidebar Footer: Steppers for Moving Section by Section */}
+              <div className="p-3 border-t border-black/5 bg-surface/90 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => scrollToSection(activeSectionIndex - 1)}
+                  disabled={activeSectionIndex <= 0}
+                  className="flex-1 flex items-center justify-center gap-1 rounded-xl border border-border/80 bg-canvas py-1.5 text-xs font-medium text-ink hover:bg-surface disabled:opacity-40 transition cursor-pointer"
+                  title="Move to previous section"
+                >
+                  <ChevronUp className="size-3.5" />
+                  <span>Prev</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToSection(activeSectionIndex + 1)}
+                  disabled={activeSectionIndex >= sections.length - 1}
+                  className="flex-1 flex items-center justify-center gap-1 rounded-xl bg-ink text-white py-1.5 text-xs font-semibold hover:bg-ink/90 disabled:opacity-40 transition cursor-pointer"
+                  title="Move to next section"
+                >
+                  <span>Next</span>
+                  <ChevronDown className="size-3.5" />
+                </button>
+              </div>
+            </aside>
+          )}
+
+          {/* Main Article Document */}
+          <div
+            ref={articleRef}
+            onScroll={handleArticleScroll}
+            className="flex-1 overflow-y-auto px-4 sm:px-10 py-8 scroll-smooth"
+          >
+            <div className="mx-auto max-w-3xl space-y-10">
+              {sections.map((sec, idx) => (
+                <section
+                  key={sec.id}
+                  id={sec.id}
+                  ref={(el) => {
+                    sectionRefs.current[idx] = el;
+                  }}
+                  className="scroll-mt-8 pb-8 border-b border-border/30 last:border-b-0 space-y-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex size-6 items-center justify-center rounded-lg bg-amber-500/15 text-amber-600 font-mono text-xs font-bold">
+                      {String(idx + 1).padStart(2, "0")}
+                    </span>
+                    <h2 className="font-serif text-xl sm:text-2xl font-bold text-ink">
+                      {sec.title}
+                    </h2>
+                  </div>
+                  <div className="prose prose-sm sm:prose-base max-w-none text-ink/90 leading-relaxed prose-headings:font-serif prose-headings:text-ink prose-a:text-brand prose-code:bg-surface prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded">
+                    <ReactMarkdown>{sec.content}</ReactMarkdown>
+                  </div>
+                </section>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -421,14 +832,49 @@ function ResearchPage() {
       </header>
       <TopTabs />
       <div className="flex-1 overflow-y-auto px-5">
-        <div className="mx-auto max-w-lg pt-16 text-center">
-          <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-2xl bg-brand text-brand-foreground">
+        <div className="mx-auto max-w-lg pt-12 sm:pt-16 text-center">
+          <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-brand text-brand-foreground shadow-sm">
             <Telescope className="size-6" />
           </div>
           <h2 className="font-serif text-3xl">Deep research</h2>
-          <p className="mx-auto mt-3 max-w-xs text-sm text-muted-foreground">
+          <p className="mx-auto mt-2 max-w-xs text-sm text-muted-foreground">
             Enter a topic. I'll ask a few questions, sweep live sources and write a cited report.
           </p>
+
+          {/* Quick Demo: Load full sample report with interactive sidebar & moving ball */}
+          <div className="mt-6 flex flex-col items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setTopic(SAMPLE_RESEARCH_TOPIC);
+                setReport(SAMPLE_RESEARCH_REPORT);
+                toast.success("Loaded Deep Research paper with Section Outline and moving ball!");
+              }}
+              className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 active:scale-95 transition cursor-pointer shadow-2xs"
+            >
+              <Sparkles className="size-3.5" />
+              <span>Explore Sample Report (Interactive Moving Ball Demo)</span>
+            </button>
+
+            {/* Topic Suggestions */}
+            <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+              {[
+                "Autonomous AI Agents 2026",
+                "Solid-State Batteries",
+                "Post-Quantum Cryptography",
+                "Brain-Computer Interfaces",
+              ].map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setTopic(s)}
+                  className="rounded-full border border-border/70 bg-surface/70 px-3 py-1 text-xs text-muted-foreground hover:text-ink hover:bg-surface transition cursor-pointer"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
       <footer className="border-t border-black/5 px-4 pb-6 pt-3">

@@ -34,26 +34,57 @@ type Body = {
   messages?: { role: "user" | "assistant"; content: string; image_url?: string | null; images?: string[] }[];
 };
 
+async function extractInlineImagePart(att: Attachment) {
+  if (!att?.dataUrl) return null;
+  let b64 = "";
+  let mime = att.mime || "image/jpeg";
+  if (att.dataUrl.startsWith("data:")) {
+    const match = att.dataUrl.match(/^data:([^;]+);base64,(.+)$/s);
+    if (match) {
+      mime = match[1] || mime;
+      b64 = match[2];
+    } else {
+      const parts = att.dataUrl.split(",");
+      b64 = parts[1] || parts[0];
+    }
+  } else if (att.dataUrl.startsWith("http://") || att.dataUrl.startsWith("https://")) {
+    try {
+      const res = await fetch(att.dataUrl, { signal: AbortSignal.timeout(6000) });
+      if (res.ok) {
+        mime = res.headers.get("content-type") || mime;
+        const ab = await res.arrayBuffer();
+        b64 = Buffer.from(ab).toString("base64");
+      }
+    } catch {
+      return null;
+    }
+  } else {
+    b64 = att.dataUrl;
+  }
+  b64 = b64.replace(/\s+/g, "");
+  if (!b64) return null;
+  return {
+    inlineData: {
+      data: b64,
+      mimeType: mime,
+    },
+  };
+}
+
 /** Build robust, strictly alternating multiturn conversation turns for Gemini */
-function buildSanitizedMultiturnContents(
+async function buildSanitizedMultiturnContents(
   rawMessages: { role: string; content?: string }[] | undefined,
   finalUserPrompt: string,
   attachments?: Attachment[],
 ) {
+  let resolvedImageParts: any[] = [];
+  if (attachments && attachments.length > 0) {
+    const partsOrNull = await Promise.all(attachments.map(extractInlineImagePart));
+    resolvedImageParts = partsOrNull.filter((p): p is NonNullable<typeof p> => p !== null);
+  }
+
   if (!rawMessages || rawMessages.length === 0) {
-    const parts: any[] = [];
-    if (attachments && attachments.length > 0) {
-      for (const att of attachments) {
-        const [, b64] = (att.dataUrl || "").split(",");
-        parts.push({
-          inlineData: {
-            data: b64 || att.dataUrl,
-            mimeType: att.mime || "image/png",
-          },
-        });
-      }
-    }
-    parts.push({ text: finalUserPrompt.trim() || "Hello" });
+    const parts: any[] = [...resolvedImageParts, { text: finalUserPrompt.trim() || "Hello" }];
     return [{ role: "user", parts }];
   }
 
@@ -94,18 +125,9 @@ function buildSanitizedMultiturnContents(
   }
 
   // 5. Attach image parts to the final user message
-  if (attachments && attachments.length > 0 && merged.length > 0) {
+  if (resolvedImageParts.length > 0 && merged.length > 0) {
     const lastItem = merged[merged.length - 1];
-    const imageParts = attachments.map((att) => {
-      const [, b64] = (att.dataUrl || "").split(",");
-      return {
-        inlineData: {
-          data: b64 || att.dataUrl,
-          mimeType: att.mime || "image/png",
-        },
-      };
-    });
-    lastItem.parts.unshift(...imageParts);
+    lastItem.parts.unshift(...resolvedImageParts);
   }
 
   return merged;
@@ -724,6 +746,9 @@ function detectCodeRequest(
     ) ||
     /\b(javascript|typescript|python|java|c\+\+|cpp|c#|csharp|rust|golang|ruby|swift|kotlin|php|html|css|tailwind|react|nextjs|next\.js|nodejs|node\.js|express|vue|angular|svelte|django|flask|fastapi|spring boot|sql|postgresql|mongodb|prisma|drizzle)\b/i.test(
       s,
+    ) ||
+    /\b(whatsapp bot|whatsapp cloud api|baileys|whatsapp-web\.js|telegram bot|discord bot|slack bot|chatbot coding|bot coding|webhook handler|ai agent code)\b/i.test(
+      s,
     );
 
   // Check if recent thread history contains code blocks (for follow-up "edit this", "explain it", "fix the bug", "convert to python")
@@ -777,28 +802,28 @@ function detectCodeRequest(
   return { isCode: true, mode: hasCodeSnippet ? "explain" : "write" };
 }
 
-const CODING_SYSTEM_INSTRUCTION = `You are My AI, an elite software engineer and coding assistant integrated directly inside the chat.
+const CODING_SYSTEM_INSTRUCTION = `You are My AI, an elite principal software engineer and coding assistant integrated directly inside the chat.
 CURRENT DATE: October 2026.
 
 CRITICAL CODING CAPABILITIES & RULES:
-1. WRITE CODE:
-   - Write complete, clean, modular, well-typed, production-ready, and directly runnable code.
+1. WRITE PRODUCTION CODE:
+   - Write complete, clean, modular, strictly-typed, production-ready, and directly runnable code.
    - Always wrap code in fenced markdown blocks with the exact language identifier (e.g., \`\`\`typescript, \`\`\`python, \`\`\`javascript, \`\`\`html, \`\`\`sql, \`\`\`cpp, etc.).
    - NEVER use lazy placeholders like "// TODO", "// rest of code here", or "// implement logic". Write the complete implementation.
-2. EDIT & REFACTOR CODE:
-   - When the user asks to edit, modify, refactor, optimize, update, or convert code (either provided in their message or from earlier in the conversation), carefully apply every requested change while preserving all working functionality.
+2. WHATSAPP BOT & CHATBOT ENGINEERING (NEXT LEVEL):
+   - When asked to build or code a WhatsApp bot, chatbot, or conversational assistant:
+     • Provide the complete, production-grade architecture (Node.js/Express with TypeScript or Python FastAPI).
+     • For WhatsApp Cloud API: write complete webhook verification (\`hub.verify_token\`, \`hub.challenge\`), incoming message dispatching (text, interactive buttons, quick replies, media), automated AI response generation, and Graph API message delivery with proper error handling and exponential backoff.
+     • For Baileys / QR-based bots: provide full multi-device socket setup, connection status handler, QR terminal output, command dispatcher, and message listeners.
+     • Include complete \`.env.example\`, \`package.json\`, and crystal-clear step-by-step setup commands so the bot can be launched immediately.
+3. EDIT & REFACTOR CODE:
+   - When the user asks to edit, modify, refactor, optimize, update, or convert code, carefully apply every requested change while preserving all working functionality.
    - Provide the complete updated code block so the user can copy and run it immediately, followed by a concise summary of what was changed and why.
-3. EXPLAIN CODE:
-   - When the user asks to explain code, break it down clearly and systematically:
-     • High-level purpose & summary of what the code does.
-     • Step-by-step walkthrough of key functions, logic flow, and important lines.
-     • Time and space complexity (Big-O) or edge cases if relevant.
-4. SOLVE & DEBUG PROBLEMS:
-   - When the user shares a bug, error message, stack trace, or coding/algorithmic problem:
-     • Identify the exact root cause of the bug or the optimal algorithmic approach.
-     • Explain how to solve or fix it clearly.
-     • Provide the complete corrected/working code solution along with example usage or test cases.
-5. SPECIFIC LEADERSHIP ACCURACY:
+4. EXPLAIN CODE:
+   - Break down logic clearly: high-level architecture, step-by-step function walkthrough, and Big-O time and space complexity.
+5. SOLVE & DEBUG PROBLEMS:
+   - Identify the exact root cause, explain how to fix it, and provide the complete corrected working solution with test cases.
+6. SPECIFIC LEADERSHIP ACCURACY:
    - If asked "who is the CEO of My AI" or "CEO of My AI Pro": state that the CEO of My AI is **Bhavyash**.`;
 
 const SYSTEM_INSTRUCTION = `You are My AI, a precise, ultra-fast AI assistant with real-time Google Search, YouTube video player integration, full software engineering (write, edit, explain, and solve code), and live internet grounding.
@@ -851,7 +876,7 @@ export const Route = createFileRoute("/api/chat")({
           );
         }
 
-        const userText = lastUser.content?.trim() || "";
+        let userText = lastUser.content?.trim() || "";
         let assistantText = "";
         let assistantImage: string | null = null;
         const assistantImagesList: string[] = [];
@@ -897,36 +922,32 @@ export const Route = createFileRoute("/api/chat")({
         }
         const hasAttachments = attachmentsList.length > 0;
 
-        // 1. IMAGE GENERATION / EDITING
-        const isAnalyzeRequest =
-          isCodingTask ||
-          (hasAttachments &&
-            /\b(analyze|describe|what is|tell me|explain|read|extract|transcribe|ocr|identify|diagnose|look at|inspect|solve|summary|help|check|see|question|read this|code|bug|error|fix|write)\b/i.test(
-              userText,
-            ) &&
-            !body.isImageEdit &&
-            !body.imageMode &&
-            !wantsImageEdit(userText));
-
-        const isImageEdit =
+        // 1. IMAGE GENERATION / EDITING VS MULTIMODAL VISION
+        const isExplicitImageGen =
           !isCodingTask &&
-          !isAnalyzeRequest &&
+          (body.imageMode || (!hasAttachments && wantsImageGen(userText)));
+
+        const isExplicitImageEdit =
+          !isCodingTask &&
+          !isExplicitImageGen &&
           (Boolean(body.isImageEdit) ||
-            Boolean(body.originalImageUrl) ||
+            (Boolean(body.originalImageUrl) && wantsImageEdit(userText)) ||
             (hasAttachments &&
-              (body.imageMode ||
-                wantsImageEdit(userText) ||
-                wantsImageGen(userText) ||
-                !userText.trim() ||
-                /\b(edit|modify|change|transform|convert|anime|sketch|cartoon|3d|style|filter|redraw|remake|generate|variations?|turn into|enhance|recreate|retouch|avatar|render|draw|make|create)\b/i.test(
-                  userText,
-                ))));
+              (body.imageMode || wantsImageEdit(userText)) &&
+              /\b(edit|modify|alter|recolor|turn this into|turn into|style as|filter|make it anime|make it 3d)\b/i.test(userText)));
 
-        const isImageGen =
-          !isCodingTask &&
-          !isAnalyzeRequest &&
-          !isImageEdit &&
-          (body.imageMode || wantsImageGen(userText));
+        const isImageGen = isExplicitImageGen;
+        const isImageEdit = isExplicitImageEdit;
+
+        // If user attached image(s) for general chat / question / coding, ensure a helpful prompt
+        if (hasAttachments && !isImageGen && !isImageEdit) {
+          if (!userText.trim()) {
+            userText =
+              "Please analyze this attached image in detail. Describe what you see, read any visible text, code, numbers, diagrams, or equations, and explain the key findings.";
+          } else if (/^(hi|hello|hey|yo|greetings|thanks|thank you|ok|okay)$/i.test(userText.trim())) {
+            userText = `${userText.trim()}! Please also analyze the attached image I've shared. Describe what is in this image in detail and answer any questions about it.`;
+          }
+        }
 
         if (isImageGen || isImageEdit) {
           try {
@@ -1181,16 +1202,18 @@ export const Route = createFileRoute("/api/chat")({
                     : "";
 
                   const codingPrompt = `${userText}${attachmentCodeNote}`;
-                  const codingConversation = buildSanitizedMultiturnContents(
+                  const codingConversation = await buildSanitizedMultiturnContents(
                     body.messages,
                     codingPrompt,
                     attachmentsList,
                   );
 
                   const codingModels = [
-                    "gemini-3-flash-preview",
-                    "gemini-3.1-pro-preview",
+                    "gemini-3.1-flash-lite",
                     "gemini-3.1-flash-lite-preview",
+                    "gemini-3.8-flash",
+                    "gemini-flash-latest",
+                    "gemini-3.1-pro-preview",
                   ];
 
                   for (const modelName of codingModels) {
@@ -1297,7 +1320,7 @@ export const Route = createFileRoute("/api/chat")({
                     : userText;
 
                   // Build sanitized, strictly alternating multiturn contents for Gemini
-                  const conversationContents = buildSanitizedMultiturnContents(
+                  const conversationContents = await buildSanitizedMultiturnContents(
                     body.messages,
                     promptWithLiveContext,
                     attachmentsList,
@@ -1305,9 +1328,11 @@ export const Route = createFileRoute("/api/chat")({
 
                   // Fast, reliable models pool with live search data embedded
                   const candidateModels = [
-                    "gemini-3-flash-preview",
+                    "gemini-3.1-flash-lite",
                     "gemini-3.1-flash-lite-preview",
-                    "gemini-2.5-flash",
+                    "gemini-3.8-flash",
+                    "gemini-flash-latest",
+                    "gemini-3.1-pro-preview",
                   ];
 
                   for (const modelName of candidateModels) {

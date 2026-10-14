@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -8,11 +8,15 @@ import {
   Plug, Check, ArrowLeft, Rocket, History, X, Share2, ChevronDown, ChevronRight,
   ChevronLeft, Globe, Copy, ExternalLink, Key, Eye, EyeOff, Folder, Image as ImageIcon,
   Github, GitBranch, ThumbsUp, ThumbsDown, Link2, Pencil, MoreHorizontal, Square,
-  Code2, MonitorPlay, Lock, Search, RefreshCw, Trash2,
+  Code2, MonitorPlay, Lock, Search, RefreshCw, Trash2, Settings, LayoutGrid, Telescope,
+  Presentation, Bot, MessageSquare, Blocks,
 } from "lucide-react";
+import amberWavesBg from "@/assets/images/amber_waves_bg_1791883311977.jpg";
+import amberGlassOrb from "@/assets/images/amber_glass_orb_1791883331076.jpg";
 import { TopTabs } from "@/components/top-tabs";
 import {
   planQuestions,
+  planProject,
   importFromGitHub,
   listUserGitHubRepos,
   type GitHubRepoInfo,
@@ -305,6 +309,7 @@ function useSpeech(onText: (t: string, isFinal?: boolean) => void) {
 function BuildPage() {
   const navigate = useNavigate();
   const planFn = useServerFn(planQuestions);
+  const planProjectFn = useServerFn(planProject);
   const importGithubFn = useServerFn(importFromGitHub);
   const listGithubReposFn = useServerFn(listUserGitHubRepos);
   const startBgBuildFn = useServerFn(startBackgroundBuild);
@@ -322,6 +327,8 @@ function BuildPage() {
   const [questions, setQuestions] = useState<BuilderQuestion[] | null>(null);
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);
+  const [executionPlan, setExecutionPlan] = useState<any | null>(null);
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
 
   // In-place editing state for an open app
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
@@ -1971,64 +1978,153 @@ function BuildPage() {
         {sharedFileInputs}
         {projectControlCenterModal}
 
-        {/* Top Bar: [ (X) ]   [ Project Name v ]   [ (>) / Publish ] */}
-        <header className="flex h-16 shrink-0 items-center justify-between px-4 bg-[#f7f7f6]/95 backdrop-blur-md z-30">
-          {/* Left: Cancel / Close circular button */}
-          <button
-            type="button"
-            onClick={reset}
-            aria-label="Close project"
-            title="Back to new build"
-            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white border border-black/8 text-zinc-800 shadow-2xs hover:bg-zinc-50 active:scale-95 transition"
-          >
-            <X className="size-5 stroke-[1.75]" />
-          </button>
+        {/* Top Bar: [ Back + Platforms ]   [ Project Name v ]   [ History + Preview/Publish ] */}
+        <header className="flex h-16 shrink-0 items-center justify-between px-3 sm:px-4 bg-[#f7f7f6]/95 backdrop-blur-md z-30 border-b border-black/5">
+          {/* Left: Platform Switcher (quick shift to Chat, Research, Slides, Coworker, No-Code) */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="relative group">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 rounded-full bg-white border border-black/8 px-3 py-2 text-xs font-semibold text-zinc-700 hover:text-zinc-950 shadow-2xs hover:bg-zinc-50 transition cursor-pointer"
+                title="Switch Platforms & Apps"
+              >
+                <LayoutGrid className="size-4 text-brand" />
+                <span className="text-[12px]">Apps</span>
+                <ChevronDown className="size-3 text-zinc-400 group-hover:text-zinc-700 transition" />
+              </button>
+              <div className="absolute left-0 top-full mt-1.5 hidden group-hover:flex flex-col w-56 rounded-2xl bg-white p-2 shadow-2xl border border-black/10 z-50 animate-in fade-in zoom-in-95">
+                <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                  Switch Platform
+                </div>
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs text-zinc-800 hover:bg-zinc-100 text-left font-semibold"
+                >
+                  <Blocks className="size-4 text-brand" />
+                  <div>
+                    <div>No-Code Studio</div>
+                    <div className="text-[10px] text-zinc-400 font-normal">All apps & builders</div>
+                  </div>
+                </button>
+                <Link
+                  to="/chat"
+                  className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs text-zinc-700 hover:bg-zinc-100 text-left"
+                >
+                  <MessageSquare className="size-4 text-emerald-600" />
+                  <div>
+                    <div className="font-medium">AI Chat</div>
+                    <div className="text-[10px] text-zinc-400">Conversational AI & Code</div>
+                  </div>
+                </Link>
+                <Link
+                  to="/research"
+                  className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs text-zinc-700 hover:bg-zinc-100 text-left"
+                >
+                  <Telescope className="size-4 text-purple-600" />
+                  <div>
+                    <div className="font-medium">Deep Research</div>
+                    <div className="text-[10px] text-zinc-400">In-depth web papers</div>
+                  </div>
+                </Link>
+                <Link
+                  to="/presentations"
+                  className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs text-zinc-700 hover:bg-zinc-100 text-left"
+                >
+                  <Presentation className="size-4 text-amber-600" />
+                  <div>
+                    <div className="font-medium">Presentations</div>
+                    <div className="text-[10px] text-zinc-400">Interactive slide decks</div>
+                  </div>
+                </Link>
+                <Link
+                  to="/agent"
+                  className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs text-zinc-700 hover:bg-zinc-100 text-left"
+                >
+                  <Bot className="size-4 text-sky-600" />
+                  <div>
+                    <div className="font-medium">AI Coworker</div>
+                    <div className="text-[10px] text-zinc-400">Multi-threaded agent</div>
+                  </div>
+                </Link>
+              </div>
+            </div>
+          </div>
 
-          {/* Center: Project Name Pill Dropdown */}
-          <div className="relative min-w-0 flex-1 flex justify-center px-2">
+          {/* Center: [ Back ]   [ User Product Name v ]   [ Publish (ONLY IN PREVIEWS) ] */}
+          <div className="relative min-w-0 flex-1 flex items-center justify-center gap-1.5 sm:gap-2 px-2">
+            {/* Side of user product name: Back option to return to No-Code Platform home page */}
+            <button
+              type="button"
+              onClick={reset}
+              aria-label="Back to No-Code Platform"
+              title="Back to No-Code Platform page (return to main studio & shift apps)"
+              className="flex items-center gap-1.5 rounded-full bg-white border border-black/10 px-3 sm:px-3.5 py-2 text-xs font-semibold text-zinc-800 shadow-2xs hover:bg-zinc-100 hover:text-black active:scale-95 transition cursor-pointer shrink-0"
+            >
+              <ArrowLeft className="size-3.5 sm:size-4" />
+              <span className="hidden xs:inline">Back</span>
+            </button>
+
+            {/* User Product Name Pill Dropdown */}
             <button
               type="button"
               onClick={() => setProjectMenuOpen((v) => !v)}
-              className="flex items-center gap-2 rounded-full bg-white border border-black/8 px-4 py-2.5 shadow-2xs hover:bg-zinc-50 active:scale-[0.99] transition max-w-[240px] sm:max-w-xs"
+              className="flex items-center gap-2 rounded-full bg-white border border-black/8 px-3.5 sm:px-4 py-2 sm:py-2.5 shadow-2xs hover:bg-zinc-50 active:scale-[0.99] transition max-w-[150px] xs:max-w-[200px] sm:max-w-xs cursor-pointer min-w-0"
             >
-              <span className="truncate text-[15px] font-medium text-zinc-900">
+              <span className="truncate text-xs sm:text-sm font-semibold text-zinc-900">
                 {built.name}
               </span>
-              <ChevronDown className="size-4 shrink-0 text-zinc-500" />
+              <ChevronDown className="size-3.5 sm:size-4 shrink-0 text-zinc-500" />
             </button>
+
+            {/* Side of user product name: Publish option ONLY shown when in Previews slide */}
+            {activeSlide === "preview" && (
+              <button
+                type="button"
+                onClick={openPublishModal}
+                className="flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 sm:px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 active:scale-95 transition cursor-pointer shrink-0 animate-in fade-in zoom-in-95"
+                title="Publish live app"
+              >
+                <Rocket className="size-3.5" />
+                <span>Publish</span>
+              </button>
+            )}
           </div>
 
-          {/* Right: History button + Publish button + Slide switcher */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Right: History button + Slide switcher (Editor / Preview) */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={() => setShowHistory((v) => !v)}
               aria-label="Project History"
               title="Open History"
-              className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white border border-black/8 text-zinc-800 shadow-2xs hover:bg-zinc-50 active:scale-95 transition"
+              className="flex size-9 sm:size-10 shrink-0 items-center justify-center rounded-full bg-white border border-black/8 text-zinc-800 shadow-2xs hover:bg-zinc-50 active:scale-95 transition cursor-pointer"
             >
-              <History className="size-5 stroke-[1.75]" />
+              <History className="size-4 stroke-[1.75]" />
             </button>
-            <button
-              type="button"
-              onClick={openPublishModal}
-              className="flex items-center gap-1.5 rounded-full bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-zinc-800 active:scale-95 transition"
-            >
-              <Rocket className="size-3.5" /> Publish
-            </button>
-            <button
-              type="button"
-              onClick={() => goToSlide(activeSlide === "chat" ? "preview" : "chat")}
-              aria-label={activeSlide === "chat" ? "Open project preview" : "Back to chat"}
-              title={activeSlide === "chat" ? "See project & publish (Slide 2)" : "Back to chat (Slide 1)"}
-              className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white border border-black/8 text-zinc-800 shadow-2xs hover:bg-zinc-50 active:scale-95 transition"
-            >
-              {activeSlide === "chat" ? (
-                <ChevronRight className="size-5 stroke-[1.75]" />
-              ) : (
-                <ChevronLeft className="size-5 stroke-[1.75]" />
-              )}
-            </button>
+
+            {activeSlide === "preview" ? (
+              <button
+                type="button"
+                onClick={() => goToSlide("chat")}
+                className="flex items-center gap-1.5 rounded-full bg-white border border-black/8 px-3 py-2 text-xs font-semibold text-zinc-800 shadow-2xs hover:bg-zinc-50 active:scale-95 transition cursor-pointer"
+                title="Back to Chat & Building"
+              >
+                <ChevronLeft className="size-4" />
+                <span className="hidden sm:inline">Editor</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => goToSlide("preview")}
+                className="flex items-center gap-1.5 rounded-full bg-zinc-900 px-3.5 sm:px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-zinc-800 active:scale-95 transition cursor-pointer"
+                title="Go to Live Preview (Publish option is available here)"
+              >
+                <Eye className="size-3.5" />
+                <span>Preview</span>
+                <ChevronRight className="size-3.5" />
+              </button>
+            )}
           </div>
         </header>
 
@@ -2284,8 +2380,8 @@ function BuildPage() {
                           </div>
                         )}
 
-                        {/* AI Action / Output Text in crisp Black */}
-                        <p className="text-[16.5px] leading-[1.5] text-zinc-950 font-normal">
+                        {/* AI Action / Output Text in crisp White */}
+                        <p className="text-[16.5px] leading-[1.5] text-white font-normal">
                           {t.aiSummary}
                         </p>
 
@@ -3074,6 +3170,92 @@ function BuildPage() {
     );
   }
 
+  /* ---------- Execution Plan View (Shown before writing code) ---------- */
+  if (executionPlan) {
+    return (
+      <div className="flex h-[100dvh] flex-col bg-canvas font-sans text-ink">
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-black/5 px-4">
+          <button onClick={() => setExecutionPlan(null)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-ink">
+            <ArrowLeft className="size-4" /> Back to Questions
+          </button>
+          <span className="text-xs font-bold text-brand uppercase tracking-wider">
+            Architecture Plan Ready
+          </span>
+          <div className="w-14" />
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-5 py-8">
+          <div className="mx-auto max-w-2xl space-y-6">
+            <div className="rounded-3xl border border-border bg-surface p-6 space-y-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-brand">Execution Plan</span>
+                  <h2 className="font-serif text-3xl font-normal text-ink mt-1">{executionPlan.name}</h2>
+                </div>
+                <div className="rounded-full bg-brand/10 text-brand px-4 py-1.5 text-xs font-semibold">
+                  {executionPlan.stack}
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {executionPlan.description}
+              </p>
+            </div>
+
+            <div className="rounded-3xl border border-border bg-surface p-6 space-y-4 shadow-sm">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-ink flex items-center gap-2">
+                <Code2 className="size-4 text-brand" /> Planned Modules & Files ({executionPlan.files?.length || 0})
+              </h3>
+              <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                {(executionPlan.files || []).map((f: any, idx: number) => (
+                  <div key={idx} className="flex items-start justify-between gap-3 p-3 rounded-2xl bg-canvas border border-border/60">
+                    <div>
+                      <p className="text-xs font-mono font-bold text-ink">{f.path}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{f.purpose}</p>
+                    </div>
+                    <span className="text-[10px] uppercase font-bold text-brand bg-brand/10 px-2 py-0.5 rounded-full shrink-0">
+                      {f.language}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setExecutionPlan(null)}
+                className="rounded-2xl border border-border bg-surface px-5 py-3 text-xs font-semibold text-muted-foreground hover:text-ink transition"
+              >
+                Modify Answers
+              </button>
+              <button
+                type="button"
+                disabled={isBuilding}
+                onClick={() => {
+                  triggerBuild(
+                    idea,
+                    (questions ?? []).map((qItem, i) => ({ question: qItem.question, answer: answers[i] })),
+                  );
+                }}
+                className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-brand py-3.5 px-6 text-sm font-bold text-brand-foreground hover:opacity-90 transition shadow-md"
+              >
+                {isBuilding ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Writing Production Code…
+                  </>
+                ) : (
+                  <>
+                    <Rocket className="size-4" /> Confirm Plan & Start Writing Code
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   /* ---------- Questions view ---------- */
   if (questions) {
     const q = questions[step];
@@ -3222,23 +3404,44 @@ function BuildPage() {
               </button>
             )}
             <button
-              disabled={!answers[step] || isBuilding}
-              onClick={() =>
-                last
-                  ? triggerBuild(
+              disabled={!answers[step] || isBuilding || isGeneratingPlan}
+              onClick={async () => {
+                if (last) {
+                  setIsGeneratingPlan(true);
+                  try {
+                    const res = await planProjectFn({
+                      data: {
+                        idea,
+                        model,
+                        answers: questions.map((qItem, i) => ({ question: qItem.question, answer: answers[i] || qItem.options[0] })),
+                        apiKeys,
+                        githubContext: importedRepo ? `GitHub: ${importedRepo.owner}/${importedRepo.repo}` : undefined,
+                        folderContext: folderContext || undefined,
+                      },
+                    });
+                    if (res) {
+                      setExecutionPlan(res);
+                    }
+                  } catch {
+                    triggerBuild(
                       idea,
                       (questions ?? []).map((qItem, i) => ({ question: qItem.question, answer: answers[i] })),
-                    )
-                  : setStep((s) => s + 1)
-              }
+                    );
+                  } finally {
+                    setIsGeneratingPlan(false);
+                  }
+                } else {
+                  setStep((s) => s + 1);
+                }
+              }}
               className="flex flex-1 items-center justify-center gap-2 rounded-full bg-brand py-3 text-sm font-semibold text-brand-foreground disabled:opacity-40 hover:opacity-90 transition"
             >
-              {isBuilding ? (
+              {isGeneratingPlan ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" /> Building your app…
+                  <Loader2 className="size-4 animate-spin" /> Generating Architecture Plan…
                 </>
               ) : last ? (
-                "Submit & Build"
+                "Review Architecture & Plan"
               ) : (
                 "Next"
               )}
@@ -3251,106 +3454,159 @@ function BuildPage() {
 
   /* ---------- Home ---------- */
   return (
-    <div className="flex h-[100dvh] flex-col bg-canvas font-sans text-ink">
+    <div className="relative flex h-[100dvh] flex-col overflow-hidden bg-[#f7f7f6] font-sans text-zinc-900 select-none">
       {projectControlCenterModal}
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-black/5 px-4 gap-2">
-        <h1 className="font-serif text-lg sm:text-xl truncate">No-code platform</h1>
+      {githubModalOverlay}
+      {sharedFileInputs}
+      {plusMenuOverlay}
 
-        {/* Clickable Project Name Pill right in the top bar */}
-        <button
-          type="button"
-          onClick={() => setProjectMenuOpen(true)}
-          title="Click to open Cloud, Database, Users, Storage, AI, Payments & Settings"
-          className="flex items-center gap-1.5 rounded-full bg-surface border border-black/10 px-3.5 py-1.5 text-xs font-semibold text-ink shadow-2xs hover:bg-surface/80 active:scale-95 transition max-w-[200px]"
-        >
-          <span className="truncate">{activeProjectTitle}</span>
-          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-        </button>
+      {/* Top Header matching screenshot */}
+      <header className="relative z-25 flex h-16 shrink-0 items-center justify-between px-5 sm:px-8 bg-[#f7f7f6]">
+        {/* Left: My AI Brand */}
+        <Link to="/build" className="flex items-center gap-2 hover:opacity-90 transition">
+          <span className="font-serif text-2xl font-bold tracking-tight text-zinc-900 leading-none">
+            My AI
+          </span>
+        </Link>
 
-        <div className="flex items-center gap-1.5">
+        {/* Right: Settings gear icon button */}
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={openPublishModal}
-            className="flex items-center gap-1 rounded-full bg-ink px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:opacity-90 transition"
+            onClick={() => setShowHistory((v) => !v)}
+            className="flex size-10 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 hover:text-zinc-950 transition active:scale-95 shadow-2xs"
+            title="Project History"
+            aria-label="History"
           >
-            <Rocket className="size-3" />
-            <span>Publish</span>
+            <History className="size-4" />
           </button>
-          <button onClick={() => setShowHistory((v) => !v)} className="p-2 text-muted-foreground hover:text-ink" title="Project History">
-            <History className="size-5" />
+          <button
+            type="button"
+            onClick={() => setProjectMenuOpen(true)}
+            className="flex size-10 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 hover:text-zinc-950 transition active:scale-95 shadow-2xs"
+            title="Settings & Control Center"
+            aria-label="Settings"
+          >
+            <Settings className="size-4.5" />
           </button>
         </div>
       </header>
-      <TopTabs />
 
-      {sharedFileInputs}
+      {/* Top Segmented Navigation Pills Switcher matching screenshot */}
+      <div className="relative z-20 flex justify-center px-4 pt-1 pb-3">
+        <div className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white/85 backdrop-blur-md p-1 shadow-xs">
+          <Link
+            to="/voice"
+            className="flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium text-zinc-600 hover:text-zinc-950 hover:bg-zinc-100 transition"
+          >
+            <Mic className="size-3.5 text-zinc-500" />
+            <span>Voice Assistant</span>
+          </Link>
+          <button
+            type="button"
+            className="flex items-center gap-2 rounded-full bg-black px-5 py-2 text-xs font-bold text-white shadow-xs cursor-default"
+          >
+            <LayoutGrid className="size-3.5" />
+            <span>No-code</span>
+          </button>
+          <Link
+            to="/research"
+            className="flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium text-zinc-600 hover:text-zinc-950 hover:bg-zinc-100 transition"
+          >
+            <Telescope className="size-3.5 text-zinc-500" />
+            <span>Research</span>
+          </Link>
+        </div>
+      </div>
 
-      <div className="flex-1 overflow-y-auto px-5">
+      {/* Main Content Area */}
+      <div className="relative z-10 flex-1 overflow-y-auto px-5 flex flex-col">
         {showHistory ? (
-          <div className="mx-auto max-w-lg py-6">
-            <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">History</h2>
-            {history.length === 0 && <p className="text-sm text-muted-foreground">No builds yet.</p>}
-            <ul className="space-y-2">
-              {history.map((h) => {
-                const isItemBuilding = h.status === "planning" || h.status === "writing";
-                return (
-                  <li key={h.id}>
-                    <div className="flex items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3 hover:bg-surface/80 transition group">
-                      <button
-                        onClick={() => openHistoryProject(h)}
-                        className="flex-1 text-left min-w-0"
-                      >
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium truncate">{h.name}</p>
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            · {isItemBuilding ? "Building…" : `${h.files?.length || 0} modules`}
-                          </span>
-                        </div>
-                        <p className="truncate text-xs text-muted-foreground mt-0.5">{h.idea}</p>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => handleDeleteProject(h, e)}
-                        className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-600 hover:bg-red-500/20 hover:text-red-700 transition"
-                        title="Delete project from history"
-                        aria-label={`Delete project ${h.name}`}
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+          <div className="mx-auto w-full max-w-lg py-6 my-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-200">
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-900">Project History</h2>
+              <button
+                type="button"
+                onClick={() => setShowHistory(false)}
+                className="text-zinc-500 hover:text-zinc-900"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            {history.length === 0 ? (
+              <p className="py-8 text-center text-sm text-zinc-500">No builds yet. Start your first idea below!</p>
+            ) : (
+              <ul className="mt-4 space-y-2.5 max-h-[55vh] overflow-y-auto pr-1">
+                {history.map((h) => {
+                  const isItemBuilding = h.status === "planning" || h.status === "writing";
+                  return (
+                    <li key={h.id}>
+                      <div className="flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 hover:border-zinc-300 hover:shadow-xs transition group">
+                        <button
+                          type="button"
+                          onClick={() => openHistoryProject(h)}
+                          className="flex-1 text-left min-w-0"
+                        >
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold text-zinc-900 truncate">{h.name}</p>
+                            <span className="text-xs text-zinc-500 shrink-0">
+                              · {isItemBuilding ? "Building…" : `${h.files?.length || 0} modules`}
+                            </span>
+                          </div>
+                          <p className="truncate text-xs text-zinc-500 mt-0.5">{h.idea}</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteProject(h, e)}
+                          className="flex size-8 shrink-0 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition"
+                          title="Delete project from history"
+                          aria-label={`Delete project ${h.name}`}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
         ) : (
-          <div className="mx-auto max-w-lg pt-12 text-center">
-            <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-brand text-brand-foreground shadow-sm">
-              <Sparkles className="size-6" />
+          <div className="my-auto flex flex-col items-center justify-center text-center max-w-xl mx-auto py-6">
+            {/* Orange-red icon badge with sparkles / plus matching screenshot */}
+            <div className="relative mb-4 flex items-center justify-center size-16 sm:size-20 rounded-2xl sm:rounded-3xl bg-[#f9572a] text-white shadow-[0_10px_30px_rgba(249,87,42,0.35)] transition-transform duration-500 hover:scale-105">
+              <Sparkles className="size-8 sm:size-10 fill-white text-white" />
             </div>
-            <p className="text-sm text-muted-foreground">Hi {name}</p>
-            <h2 className="mt-1 font-serif text-3xl">Start building your idea</h2>
-            <p className="mx-auto mt-2 max-w-xs text-sm text-muted-foreground">
+
+            {/* Subtitle: Hi there */}
+            <p className="text-xs sm:text-sm font-medium text-zinc-500 mb-1">
+              Hi {name || "there"}
+            </p>
+
+            {/* Hero Heading in elegant serif font matching screenshot */}
+            <h1 className="font-serif text-4xl sm:text-5xl md:text-6xl text-zinc-900 font-normal tracking-tight text-center leading-[1.12]">
+              Start building your idea
+            </h1>
+
+            {/* Subtitle description */}
+            <p className="mx-auto mt-3.5 max-w-sm sm:max-w-md text-center text-xs sm:text-sm text-zinc-600 leading-relaxed font-normal">
               Describe it in a sentence. I'll ask questions, request any API keys, integrate GitHub code, and write production software.
             </p>
 
-            {/* Attached Context Preview */}
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {/* Attached Context Preview Badges */}
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
               {importedRepo && (
-                <div className="flex items-center gap-1.5 rounded-full bg-zinc-900 text-white px-3 py-1 text-xs shadow-xs">
+                <div className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white text-zinc-800 px-3.5 py-1 text-xs shadow-2xs">
                   {importedRepo.isPrivate ? (
-                    <Lock className="size-3 text-amber-400" />
+                    <Lock className="size-3 text-zinc-600" />
                   ) : (
-                    <Github className="size-3.5" />
+                    <Github className="size-3.5 text-zinc-700" />
                   )}
                   <span className="font-semibold">{importedRepo.owner}/{importedRepo.repo}</span>
-                  <span className="text-[10px] text-zinc-400">
-                    ({importedRepo.isPrivate ? "Private" : "Public"})
-                  </span>
                   <button
                     type="button"
                     onClick={() => setImportedRepo(null)}
-                    className="ml-1 hover:text-red-400"
+                    className="ml-1 text-zinc-400 hover:text-red-500"
                   >
                     <X className="size-3" />
                   </button>
@@ -3358,8 +3614,8 @@ function BuildPage() {
               )}
 
               {folderName && (
-                <div className="flex items-center gap-1.5 rounded-full bg-blue-50 text-blue-700 px-3 py-1 text-xs border border-blue-200">
-                  <Folder className="size-3.5" />
+                <div className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white text-zinc-800 px-3.5 py-1 text-xs shadow-2xs">
+                  <Folder className="size-3.5 text-blue-600" />
                   <span>Folder: <strong>{folderName}</strong></span>
                   <button
                     type="button"
@@ -3367,7 +3623,7 @@ function BuildPage() {
                       setFolderName(null);
                       setFolderContext(null);
                     }}
-                    className="ml-1 hover:text-red-500"
+                    className="ml-1 text-zinc-400 hover:text-red-500"
                   >
                     <X className="size-3" />
                   </button>
@@ -3375,13 +3631,13 @@ function BuildPage() {
               )}
 
               {attachedImages.length > 0 && (
-                <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 text-emerald-700 px-3 py-1 text-xs border border-emerald-200">
-                  <ImageIcon className="size-3.5" />
+                <div className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white text-zinc-800 px-3.5 py-1 text-xs shadow-2xs">
+                  <ImageIcon className="size-3.5 text-emerald-600" />
                   <span>{attachedImages.length} image(s)</span>
                   <button
                     type="button"
                     onClick={() => setAttachedImages([])}
-                    className="ml-1 hover:text-red-500"
+                    className="ml-1 text-zinc-400 hover:text-red-500"
                   >
                     <X className="size-3" />
                   </button>
@@ -3392,12 +3648,12 @@ function BuildPage() {
             {attachedImages.length > 0 && (
               <div className="mt-3 flex justify-center gap-2">
                 {attachedImages.map((src, i) => (
-                  <div key={i} className="relative size-12 rounded-xl border overflow-hidden shadow-xs">
+                  <div key={i} className="relative size-12 rounded-xl border border-zinc-200 overflow-hidden shadow-2xs">
                     <img src={src} alt="Mockup" referrerPolicy="no-referrer" className="size-full object-cover" />
                     <button
                       type="button"
                       onClick={() => setAttachedImages((p) => p.filter((_, idx) => idx !== i))}
-                      className="absolute top-0.5 right-0.5 rounded-full bg-black/70 text-white p-0.5"
+                      className="absolute top-0.5 right-0.5 rounded-full bg-zinc-900/80 text-white p-0.5"
                     >
                       <X className="size-2.5" />
                     </button>
@@ -3409,29 +3665,28 @@ function BuildPage() {
         )}
       </div>
 
-      {githubModalOverlay}
-
-      {/* Model picker */}
+      {/* Model Picker Sheet */}
       {modelOpen && (
         <>
-          <div className="fixed inset-0 z-40 bg-ink/20" onClick={() => setModelOpen(false)} />
-          <div className="fixed inset-x-3 bottom-28 z-50 rounded-3xl bg-canvas p-2 ring-1 ring-black/10">
-            <p className="px-3 py-2 text-[11px] uppercase tracking-widest text-muted-foreground">Choose a model</p>
+          <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={() => setModelOpen(false)} />
+          <div className="fixed inset-x-3 bottom-28 z-50 mx-auto max-w-md rounded-3xl border border-zinc-200 bg-white p-3 shadow-2xl">
+            <p className="px-3 py-2 text-[11px] uppercase tracking-widest text-zinc-500 font-bold">Choose a model</p>
             {MODELS.map((m) => (
               <button
                 key={m.id}
+                type="button"
                 onClick={() => {
                   setModel(m.id);
                   setModelOpen(false);
                 }}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left",
-                  model === m.id ? "bg-surface" : "hover:bg-surface/60",
+                  "flex w-full items-center gap-3 rounded-2xl px-3.5 py-3 text-left transition",
+                  model === m.id ? "bg-zinc-100 text-zinc-900" : "hover:bg-zinc-50 text-zinc-600",
                 )}
               >
                 <div className="flex-1">
-                  <p className="text-sm font-medium">{m.label}</p>
-                  <p className="text-[11px] text-muted-foreground">{m.note}</p>
+                  <p className="text-sm font-semibold text-zinc-900">{m.label}</p>
+                  <p className="text-[11px] text-zinc-500">{m.note}</p>
                 </div>
                 {model === m.id && <Check className="size-4 text-brand" />}
               </button>
@@ -3440,28 +3695,21 @@ function BuildPage() {
         </>
       )}
 
-      {plusMenuOverlay}
-
-      <footer className="border-t border-black/5 px-4 pb-6 pt-3">
-        <div className="mx-auto mb-2 flex max-w-lg justify-center">
+      {/* Floating Prompt Input Bar matching screenshot */}
+      <footer className="relative z-20 px-4 pb-6 pt-2">
+        <div className="mx-auto flex w-full max-w-xl items-center gap-2 rounded-full border border-zinc-200 bg-white p-2 shadow-[0_8px_30px_rgba(0,0,0,0.06)]">
+          {/* Plus Option Button */}
           <button
-            onClick={() => setModelOpen((v) => !v)}
-            className="flex items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-xs text-muted-foreground ring-1 ring-black/5 hover:text-ink transition"
-          >
-            <Sparkles className="size-3.5 text-brand" />
-            {MODELS.find((m) => m.id === model)?.label}
-            <ChevronDown className="size-3.5" />
-          </button>
-        </div>
-        <div className="mx-auto flex max-w-lg items-end gap-2 rounded-[24px] bg-surface p-2 ring-1 ring-black/5 shadow-xs">
-          <button
+            type="button"
             onClick={() => setMenuOpen((v) => !v)}
-            className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-ink transition hover:bg-black/5"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-700 hover:bg-zinc-200 transition active:scale-95 shadow-2xs"
             aria-label="Add tools, GitHub, folders, or images"
             title="Upload images, folder, or import from GitHub"
           >
             <Plus className="size-5" />
           </button>
+
+          {/* Prompt Input */}
           <textarea
             value={idea}
             onChange={(e) => setIdea(e.target.value)}
@@ -3477,29 +3725,43 @@ function BuildPage() {
             placeholder={
               importedRepo
                 ? `Building on ${importedRepo.owner}/${importedRepo.repo}… describe features or changes`
-                : "Describe your idea… (or click + to upload images or folder)"
+                : "Describe your idea... (or type / for commands)"
             }
-            className="flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none placeholder:text-muted-foreground"
-            style={{ maxHeight: 140 }}
+            className="flex-1 resize-none bg-transparent px-2 py-2 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 font-normal leading-relaxed"
+            style={{ maxHeight: 120 }}
           />
+
+          {/* Separator Line */}
+          <div className="h-6 w-px bg-zinc-200 shrink-0 mx-0.5" />
+
+          {/* Mic Button */}
           <button
+            type="button"
             onClick={toggle}
             className={cn(
-              "flex size-9 shrink-0 items-center justify-center rounded-full transition",
-              listening ? "bg-destructive text-white animate-pulse" : "text-muted-foreground hover:text-ink hover:bg-black/5",
+              "flex size-9 shrink-0 items-center justify-center rounded-full transition active:scale-95",
+              listening ? "bg-red-500 text-white animate-pulse" : "text-zinc-500 hover:text-zinc-900",
             )}
             aria-label="Voice to text"
             title="Voice input with high audio sensitivity"
           >
             {listening ? <MicOff className="size-4" /> : <Mic className="size-4" />}
           </button>
+
+          {/* Send Button */}
           <button
+            type="button"
             onClick={() => idea.trim() && plan.mutate(idea.trim())}
             disabled={!idea.trim() || plan.isPending}
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-ink text-white disabled:opacity-40 transition shadow-xs hover:opacity-90"
-            aria-label="Start"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-md hover:bg-black active:scale-95 transition disabled:opacity-40 disabled:hover:scale-100 disabled:shadow-none"
+            aria-label="Start building"
+            title="Start building"
           >
-            {plan.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+            {plan.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Send className="size-4 -rotate-12 translate-x-px" />
+            )}
           </button>
         </div>
       </footer>

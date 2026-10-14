@@ -1,14 +1,15 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { getMessages, deleteMessage, saveChatMessage } from "@/lib/chat.functions";
+import { getMessages, deleteMessage, saveChatMessage, clearThread } from "@/lib/chat.functions";
 import {
   getLocalMessages,
   saveLocalMessages,
   generateThreadTitle,
   type LocalMessage,
 } from "@/lib/chat-store";
+import { getActiveUserSession, type AppUserSession } from "@/lib/user-session";
 import { extractTextFromPdfBuffer } from "@/lib/pdf-generator";
 import { supabase } from "@/integrations/supabase/client";
 import { auth } from "@/lib/firebase";
@@ -31,6 +32,10 @@ import {
   Smartphone,
   Camera,
   Wand2,
+  Code,
+  LogIn,
+  User,
+  StickyNote,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -119,6 +124,25 @@ function ChatThread() {
   const [listening, setListening] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [notesModalOpen, setNotesModalOpen] = useState(false);
+  const [scratchpadText, setScratchpadText] = useState("");
+  const [activeUserSession, setActiveUserSession] = useState<AppUserSession | null>(null);
+
+  useEffect(() => {
+    setActiveUserSession(getActiveUserSession());
+    try {
+      const stored = localStorage.getItem("myaipro_scratchpad") || "";
+      setScratchpadText(stored);
+    } catch {
+      // ignore
+    }
+    function onAuth() {
+      setActiveUserSession(getActiveUserSession());
+    }
+    window.addEventListener("myaipro_auth_changed", onAuth);
+    return () => window.removeEventListener("myaipro_auth_changed", onAuth);
+  }, []);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -139,6 +163,21 @@ function ChatThread() {
       });
     },
     onError: (e: any) => toast.error(e.message ?? "Delete failed"),
+  });
+
+  const clearFn = useServerFn(clearThread);
+  const clearMsgMut = useMutation({
+    mutationFn: (tId: string) => clearFn({ data: { id: tId } }),
+    onSuccess: () => {
+      setMessages([]);
+      saveLocalMessages(threadId, []);
+      toast.success("Chat cleared");
+    },
+    onError: () => {
+      setMessages([]);
+      saveLocalMessages(threadId, []);
+      toast.success("Chat cleared");
+    },
   });
 
   // Hydration-safe cache loading after mount
@@ -166,6 +205,32 @@ function ChatThread() {
       });
     }
   }, [initial, threadId]);
+
+  // Listen to external chat clear events
+  useEffect(() => {
+    function handleCleared(e: any) {
+      if (!e.detail || e.detail === threadId) {
+        setMessages([]);
+        saveLocalMessages(threadId, []);
+      }
+    }
+    window.addEventListener("myaipro_chat_cleared", handleCleared);
+    return () => window.removeEventListener("myaipro_chat_cleared", handleCleared);
+  }, [threadId]);
+
+  const sendRef = useRef<(prompt: string) => void>(() => {});
+
+  // Listen to external note/action prompt dispatches
+  useEffect(() => {
+    function handleExternalPrompt(e: any) {
+      const p = e.detail;
+      if (typeof p === "string" && p.trim()) {
+        sendRef.current(p.trim());
+      }
+    }
+    window.addEventListener("myaipro_send_chat_prompt", handleExternalPrompt);
+    return () => window.removeEventListener("myaipro_send_chat_prompt", handleExternalPrompt);
+  }, [threadId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -617,6 +682,8 @@ function ChatThread() {
     window.speechSynthesis.speak(u);
   }
 
+  sendRef.current = send;
+
   return (
     <>
       {/* Live search indicator banner */}
@@ -626,12 +693,27 @@ function ChatThread() {
           <span>Live Google & Wikipedia Grounding Active</span>
         </div>
         <div className="flex items-center gap-2">
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm("Clear all messages in this conversation?")) {
+                  clearMsgMut.mutate(threadId);
+                }
+              }}
+              className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition cursor-pointer"
+              title="Clear all messages in this chat"
+            >
+              <Trash2 className="size-3" />
+              <span>Clear chat</span>
+            </button>
+          )}
           {attachments.length > 0 && (
             <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-semibold text-brand">
               {attachments.length} image{attachments.length > 1 ? "s" : ""} attached
             </span>
           )}
-          <span className="text-[11px] opacity-70">My AI 1.1</span>
+          <span className="text-[11px] opacity-70">My AI Pro 1.1</span>
         </div>
       </div>
 
@@ -643,28 +725,86 @@ function ChatThread() {
       >
         <div className="mx-auto flex max-w-2xl flex-col gap-6">
           {messages.length === 0 && (
-            <div className="my-auto py-12 text-center">
-              <h1 className="font-serif text-3xl font-bold text-ink">My AI 1.1</h1>
+            <div className="my-auto py-8 text-center max-w-xl mx-auto">
+              <div className="inline-flex size-14 items-center justify-center rounded-2xl bg-brand/10 text-brand shadow-xs mb-4">
+                <Sparkles className="size-7" />
+              </div>
+              <h1 className="font-serif text-3xl font-bold tracking-tight text-ink">
+                My AI Pro
+              </h1>
               <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-                Ultra-fast assistant with multimodal image analysis, live Google search grounding, and device controls.
+                How can I help you today? Chat freely, ask to write or debug code, attach images for deep visual analysis, or search real-time facts.
               </p>
 
-              {/* Quick Starter Prompts */}
-              <div className="mx-auto mt-8 grid max-w-md grid-cols-2 gap-2 text-left">
-                {[
-                  "Calculate 245 * 38 with steps",
-                  "Open YouTube on my mobile",
-                  "Generate a photorealistic cyberpunk city",
-                  "Show me a video about Artificial Intelligence",
-                ].map((s, sIdx) => (
-                  <button
-                    key={`starter-prompt-${sIdx}`}
-                    onClick={() => send(s)}
-                    className="rounded-2xl border border-border/60 bg-card p-3 text-xs leading-snug text-ink transition hover:bg-surface hover:border-brand/40"
+              {!activeUserSession && (
+                <div className="mx-auto mt-4 inline-flex items-center gap-2 rounded-full border border-brand/25 bg-brand/5 px-3.5 py-1.5 text-xs text-muted-foreground shadow-2xs">
+                  <span className="inline-flex size-2 rounded-full bg-brand" />
+                  <span>Guest session active</span>
+                  <span className="text-border">•</span>
+                  <Link
+                    to="/auth"
+                    className="font-semibold text-brand underline underline-offset-2 hover:text-brand/80 transition"
                   >
-                    {s}
-                  </button>
-                ))}
+                    Sign in to save history
+                  </Link>
+                </div>
+              )}
+
+              {/* Quick starter prompt chips */}
+              <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-left">
+                <button
+                  type="button"
+                  onClick={() => send("Write a TypeScript function to debounce an event handler with proper types and generic arguments")}
+                  className="group flex flex-col gap-1 rounded-xl border border-border/70 bg-surface/80 p-3 hover:border-brand/60 hover:bg-surface transition shadow-xs text-xs cursor-pointer"
+                >
+                  <span className="font-semibold text-ink group-hover:text-brand flex items-center gap-1.5">
+                    <span>💻</span> Write Code
+                  </span>
+                  <span className="text-muted-foreground text-[11px] line-clamp-1">
+                    TypeScript debounce helper with generic types
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => send("Write a Python script for a simple REST API using FastAPI with request validation")}
+                  className="group flex flex-col gap-1 rounded-xl border border-border/70 bg-surface/80 p-3 hover:border-brand/60 hover:bg-surface transition shadow-xs text-xs cursor-pointer"
+                >
+                  <span className="font-semibold text-ink group-hover:text-brand flex items-center gap-1.5">
+                    <span>⚡</span> Python API
+                  </span>
+                  <span className="text-muted-foreground text-[11px] line-clamp-1">
+                    FastAPI REST backend with validation
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    fileInputRef.current?.click();
+                  }}
+                  className="group flex flex-col gap-1 rounded-xl border border-border/70 bg-surface/80 p-3 hover:border-brand/60 hover:bg-surface transition shadow-xs text-xs cursor-pointer"
+                >
+                  <span className="font-semibold text-ink group-hover:text-brand flex items-center gap-1.5">
+                    <span>🖼️</span> Analyze Image
+                  </span>
+                  <span className="text-muted-foreground text-[11px] line-clamp-1">
+                    Upload a photo, screenshot, or diagram to inspect
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => send("Explain how modern transformers work in machine learning with a clear mental model")}
+                  className="group flex flex-col gap-1 rounded-xl border border-border/70 bg-surface/80 p-3 hover:border-brand/60 hover:bg-surface transition shadow-xs text-xs cursor-pointer"
+                >
+                  <span className="font-semibold text-ink group-hover:text-brand flex items-center gap-1.5">
+                    <span>🧠</span> Explain Concepts
+                  </span>
+                  <span className="text-muted-foreground text-[11px] line-clamp-1">
+                    How AI transformers and attention work
+                  </span>
+                </button>
               </div>
             </div>
           )}
@@ -849,17 +989,17 @@ function ChatThread() {
 
         {/* Plus Action Popup Menu */}
         {plusMenuOpen && (
-          <div className="mx-auto mb-2 flex max-w-2xl items-center gap-2 rounded-2xl bg-surface p-2 shadow-lg ring-1 ring-black/10 animate-in slide-in-from-bottom-2">
+          <div className="mx-auto mb-2 flex max-w-2xl flex-wrap items-center gap-2 rounded-2xl bg-surface p-2.5 shadow-xl ring-1 ring-black/10 border border-border/80 animate-in slide-in-from-bottom-2">
             <button
               type="button"
               onClick={() => {
                 setPlusMenuOpen(false);
                 setCameraOpen(true);
               }}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand/10 p-2.5 text-xs font-semibold text-brand hover:bg-brand/20 transition"
+              className="flex items-center gap-1.5 rounded-xl bg-brand/10 px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/20 transition cursor-pointer"
             >
               <Camera className="size-4" />
-              <span>Camera (Take Photo)</span>
+              <span>Camera</span>
             </button>
 
             <button
@@ -868,10 +1008,10 @@ function ChatThread() {
                 setPlusMenuOpen(false);
                 fileInputRef.current?.click();
               }}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border/80 bg-canvas p-2.5 text-xs font-semibold text-ink hover:bg-surface transition"
+              className="flex items-center gap-1.5 rounded-xl border border-border/80 bg-canvas px-3 py-2 text-xs font-semibold text-ink hover:bg-surface transition cursor-pointer"
             >
               <Paperclip className="size-4 text-muted-foreground" />
-              <span>Upload Gallery / Files</span>
+              <span>Files / Photos</span>
             </button>
 
             <button
@@ -881,8 +1021,10 @@ function ChatThread() {
                 setImageMode((v) => !v);
               }}
               className={cn(
-                "flex items-center justify-center gap-1.5 rounded-xl p-2.5 text-xs font-semibold transition",
-                imageMode ? "bg-brand text-brand-foreground" : "bg-surface text-muted-foreground hover:text-ink"
+                "flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition cursor-pointer",
+                imageMode
+                  ? "bg-brand text-brand-foreground shadow-xs"
+                  : "bg-surface text-muted-foreground hover:text-ink border border-border/70"
               )}
             >
               <ImageIcon className="size-4" />
@@ -891,8 +1033,50 @@ function ChatThread() {
 
             <button
               type="button"
+              onClick={() => {
+                setPlusMenuOpen(false);
+                setInput((prev) =>
+                  prev
+                    ? `${prev}\n\nWrite a complete production-ready code in TypeScript/Python: `
+                    : "Write a complete production-ready code in TypeScript/Python: "
+                );
+                textareaRef.current?.focus();
+              }}
+              className="flex items-center gap-1.5 rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/70 dark:bg-blue-950/30 px-3 py-2 text-xs font-semibold text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition cursor-pointer"
+              title="Code Assistant prompt helper"
+            >
+              <Code className="size-4" />
+              <span>Code Assistant</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPlusMenuOpen(false);
+                setNotesModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50/70 dark:bg-amber-950/20 px-3 py-2 text-xs font-semibold text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition cursor-pointer"
+              title="Open Notes & Scratchpad"
+            >
+              <StickyNote className="size-4" />
+              <span>Notes</span>
+            </button>
+
+            <Link
+              to="/auth"
               onClick={() => setPlusMenuOpen(false)}
-              className="rounded-lg p-2 text-muted-foreground hover:text-ink"
+              className="flex items-center gap-1.5 rounded-xl border border-purple-200 dark:border-purple-900/50 bg-purple-50/70 dark:bg-purple-950/30 px-3 py-2 text-xs font-semibold text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition cursor-pointer"
+              title="Sign in or register account"
+            >
+              <LogIn className="size-4" />
+              <span>{activeUserSession ? "Account" : "Sign In"}</span>
+            </Link>
+
+            <button
+              type="button"
+              onClick={() => setPlusMenuOpen(false)}
+              className="ml-auto rounded-lg p-1.5 text-muted-foreground hover:bg-canvas hover:text-ink transition cursor-pointer"
+              aria-label="Close menu"
             >
               <X className="size-4" />
             </button>
@@ -1072,6 +1256,79 @@ function ChatThread() {
         onClose={() => setCameraOpen(false)}
         onCapture={handleCameraCapture}
       />
+
+      {/* Quick Notes & Scratchpad Modal */}
+      {notesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in">
+          <div className="w-full max-w-lg rounded-2xl border border-border/80 bg-surface p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-border/60 pb-3">
+              <div className="flex items-center gap-2 font-semibold text-ink">
+                <StickyNote className="size-4 text-amber-500" />
+                <span>Notes & Scratchpad</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNotesModalOpen(false)}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-canvas hover:text-ink transition cursor-pointer"
+                aria-label="Close modal"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Jot down thoughts, code snippets, or prompt ideas. Notes are automatically saved locally.
+            </p>
+
+            <textarea
+              value={scratchpadText}
+              onChange={(e) => {
+                setScratchpadText(e.target.value);
+                try {
+                  localStorage.setItem("myaipro_scratchpad", e.target.value);
+                } catch {
+                  // ignore
+                }
+              }}
+              rows={8}
+              placeholder="Type your notes or prompt ideas here..."
+              className="w-full rounded-xl border border-border/80 bg-canvas p-3 text-xs text-ink outline-none focus:border-brand focus:ring-1 focus:ring-brand font-mono leading-relaxed"
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+              <div className="text-[11px] text-muted-foreground">
+                {scratchpadText.length} characters
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(scratchpadText);
+                    toast.success("Notes copied to clipboard!");
+                  }}
+                  disabled={!scratchpadText.trim()}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-ink hover:bg-canvas transition disabled:opacity-40 cursor-pointer"
+                >
+                  Copy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInput((prev) => (prev ? `${prev}\n\n${scratchpadText}` : scratchpadText));
+                    setNotesModalOpen(false);
+                    textareaRef.current?.focus();
+                    toast.success("Notes inserted into prompt!");
+                  }}
+                  disabled={!scratchpadText.trim()}
+                  className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-foreground hover:bg-brand/90 transition disabled:opacity-40 cursor-pointer"
+                >
+                  Insert into Prompt
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -50,7 +50,7 @@ const modelSchema = z.enum(["myai", "opus", "gpt", "kimi"]).default("myai");
 
 /** Step 1 — turn a raw idea or edit request into multiple-choice scoping questions, including API Key requirements if needed. */
 export const planQuestions = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         idea: z.string().trim().min(2),
@@ -243,7 +243,7 @@ CRITICAL RULES:
 
 /** Step 2a — plan the full multi-folder file list with unlimited folders and files based on project requirements. */
 export const planProject = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         idea: z.string().trim().min(2),
@@ -343,7 +343,7 @@ Rules:
 
 /** Step 2b — write ONE file as raw code with unlimited length. Integrates user-provided API keys directly. */
 export const writeProjectFile = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         idea: z.string().trim().min(2),
@@ -839,7 +839,7 @@ function inferLanguageFromPath(filePath: string): string {
 
 /** List repositories from the user's GitHub account (supports Private + Public via Personal Access Token / OAuth token, or Public via username). */
 export const listUserGitHubRepos = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         githubToken: z.string().trim().optional(),
@@ -941,7 +941,7 @@ export const listUserGitHubRepos = createServerFn({ method: "POST" })
 
 /** Step 3 — Import code directly from GitHub (Public via URL or Private via user's GitHub account token). */
 export const importFromGitHub = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         repoUrl: z.string().trim().min(2).max(500),
@@ -1103,7 +1103,7 @@ export const importFromGitHub = createServerFn({ method: "POST" })
 
 /** Suggest 6 concrete upgrades for an existing project so users can keep iterating. */
 export const suggestUpgrades = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         name: z.string().max(200).default(""),
@@ -1142,7 +1142,7 @@ export const suggestUpgrades = createServerFn({ method: "POST" })
 
 /** Step 2c — a standalone HTML preview of the finished app. */
 export const buildPreview = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         idea: z.string().trim().min(3).max(2000),
@@ -1325,7 +1325,7 @@ const activeBuildJobs = loadJobs();
  * Continues building and writing code even if mobile device locks screen, sleeps, or disconnects.
  * Supports both creating a new app and editing/integrating features into an existing app in-place. */
 export const startBackgroundBuild = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         buildId: z.string().min(1),
@@ -2138,7 +2138,7 @@ CRITICAL RULES:
 
 /** Poll or fetch current status of a background build job */
 export const getBuildJobStatus = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ buildId: z.string() }).parse(d))
+  .validator((d: unknown) => z.object({ buildId: z.string() }).parse(d))
   .handler(async ({ data }) => {
     let job = activeBuildJobs.get(data.buildId);
     if (!job) {
@@ -2182,7 +2182,7 @@ function savePublishedApps(map: Record<string, PublishedAppRecord>) {
 
 /** Delete a project from server build job history and published apps */
 export const deleteBuildJob = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ buildId: z.string(), name: z.string().optional() }).parse(d),
   )
   .handler(async ({ data }) => {
@@ -2206,7 +2206,7 @@ export const deleteBuildJob = createServerFn({ method: "POST" })
 
 /** Publish a built application to the server registry so /p/$appId works everywhere */
 export const publishBuiltApp = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string().optional(),
@@ -2255,7 +2255,7 @@ export const publishBuiltApp = createServerFn({ method: "POST" })
 
 /** Retrieve a published app by slug, name, or id from the server registry or build jobs */
 export const getPublishedApp = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ appId: z.string() }).parse(d))
+  .validator((d: unknown) => z.object({ appId: z.string() }).parse(d))
   .handler(async ({ data }) => {
     const rawId = decodeURIComponent(data.appId).trim();
     const lower = rawId.toLowerCase();
@@ -2302,7 +2302,7 @@ export const getPublishedApp = createServerFn({ method: "POST" })
 
 /** Research — clarifying questions, then a deep cited report. */
 export const researchQuestions = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ topic: z.string().trim().min(3).max(500) }).parse(d),
   )
   .handler(async ({ data }) => {
@@ -2356,7 +2356,7 @@ export const researchQuestions = createServerFn({ method: "POST" })
 
 /** One research sweep: live web search for a sub-question + condensed analyst notes. */
 export const researchSweep = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         topic: z.string().trim().min(3).max(500),
@@ -2435,7 +2435,7 @@ export const researchSweep = createServerFn({ method: "POST" })
 
 /** Final step: turn everything gathered during the time budget into the paper. */
 export const synthesizeResearch = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         topic: z.string().trim().min(3).max(500),

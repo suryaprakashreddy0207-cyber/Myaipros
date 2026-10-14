@@ -24,7 +24,7 @@ const askProjectSchema = z.object({
 });
 
 export const sendProjectChatMessage = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => askProjectSchema.parse(d))
+  .validator((d: unknown) => askProjectSchema.parse(d))
   .handler(async ({ data }) => {
     const {
       projectTitle,

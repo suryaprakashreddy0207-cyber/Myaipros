@@ -1,0 +1,1 @@
+import{r as e}from"./useRouter-D3TAK78G.js";import{t}from"./useNavigate-C7yi7-w6.js";var n=e(),r=()=>(0,n.jsx)(t,{to:`/chat/$threadId`,params:{threadId:`default`},replace:!0});export{r as component};

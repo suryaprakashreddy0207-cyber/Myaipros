@@ -76,16 +76,20 @@ export function AddSourceModal({
   const [uploadFileName, setUploadFileName] = useState("");
   const [uploadFileContent, setUploadFileContent] = useState("");
 
+  const loadItemsForTabRef = useRef<(tab: TabType, currentToken?: string | null) => Promise<void>>(
+    async () => {},
+  );
+
   useEffect(() => {
     if (isOpen) {
       const currentTok = getCachedGoogleToken();
       setToken(currentTok);
       setConnectedEmail(getConnectedGoogleEmail());
       if (currentTok && activeTab !== "file") {
-        loadItemsForTab(activeTab, currentTok);
+        loadItemsForTabRef.current(activeTab, currentTok);
       }
     }
-  }, [isOpen]);
+  }, [isOpen, activeTab]);
 
   if (!isOpen) return null;
 
@@ -144,6 +148,8 @@ export function AddSourceModal({
       setIsLoadingItems(false);
     }
   }
+
+  loadItemsForTabRef.current = loadItemsForTab;
 
   function handleTabChange(tab: TabType) {
     setActiveTab(tab);
