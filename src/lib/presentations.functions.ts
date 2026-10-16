@@ -258,18 +258,25 @@ export const generatePresentation = createServerFn({ method: "POST" })
           httpOptions: { headers: { "User-Agent": "aistudio-build" } },
         });
         const prompt = `Create a professional presentation slide deck about: "${data.topic}". Produce EXACTLY ${data.slideCount} slides in valid JSON: {"title":"...","slides":[{"title":"...","bullets":["...","...","..."],"notes":"..."}]}`;
-        const res = await ai.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents: prompt,
-          config: { responseMimeType: "application/json" },
-        });
-        const parsed = JSON.parse(res.text || "{}");
-        if (parsed.title) title = parsed.title;
-        if (Array.isArray(parsed.slides) && parsed.slides.length > 0) {
-          slides = parsed.slides;
+        for (const m of ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-3.8-flash"]) {
+          try {
+            const res = await ai.models.generateContent({
+              model: m,
+              contents: prompt,
+              config: { responseMimeType: "application/json" },
+            });
+            const parsed = JSON.parse(res.text || "{}");
+            if (parsed.title) title = parsed.title;
+            if (Array.isArray(parsed.slides) && parsed.slides.length > 0) {
+              slides = parsed.slides;
+              break;
+            }
+          } catch {
+            // try next model
+          }
         }
       } catch (err) {
-        console.warn("Gemini slide generation notice:", err);
+        console.warn("AI slide generation notice:", err);
       }
     }
 

@@ -32,7 +32,7 @@ ${opts.businessDesc ? `About our business: ${opts.businessDesc}` : ""}
 ${opts.website ? `Official Website: ${opts.website}` : ""}
 Never invent unverified prices or inventory — offer to connect them with a human specialist if needed. Fulfill questions directly.`;
 
-  // 1. Primary fast Gemini API
+  // 1. Primary fast AI API
   if (process.env.GEMINI_API_KEY) {
     try {
       const { GoogleGenAI } = await import("@google/genai");
@@ -40,7 +40,7 @@ Never invent unverified prices or inventory — offer to connect them with a hum
         apiKey: process.env.GEMINI_API_KEY,
         httpOptions: { headers: { "User-Agent": "aistudio-build" } },
       });
-      for (const model of ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview", "gemini-3.8-flash"]) {
+      for (const model of ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-3.8-flash"]) {
         try {
           const res = await ai.models.generateContent({
             model,

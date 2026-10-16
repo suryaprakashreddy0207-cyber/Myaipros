@@ -113,7 +113,7 @@ Return ONLY valid JSON:
 
 CRITICAL RULES:
 1. Provide 4 to 5 questions with 3 concrete options each.
-2. API KEY DETECTION: If the user idea involves ANY external API or service (e.g. OpenAI / Claude / Gemini AI, Stripe / PayPal, Google Maps, OpenWeather / Weather, Supabase / Firebase, Twilio / SMS, SendGrid / Resend, GitHub API, Spotify, etc.) OR if external APIs will power the application:
+2. API KEY DETECTION: If the user idea involves ANY external API or service (e.g. OpenAI / Claude / Advanced AI, Stripe / PayPal, Google Maps, OpenWeather / Weather, Supabase / Firebase, Twilio / SMS, SendGrid / Resend, GitHub API, Spotify, etc.) OR if external APIs will power the application:
    You MUST include an explicit question asking about that API key / credential:
    - question: "Do you have an API key for [Service Name] to connect, or should we skip for now?"
    - options: ["Enter my API key now", "Skip for now (use mock data & .env placeholder)", "Configure in .env later"]
@@ -156,7 +156,7 @@ CRITICAL RULES:
     }
 
     const lower = data.idea.toLowerCase();
-    const needsApi = /api|key|openai|gemini|stripe|pay|weather|map|google|auth|mail|twilio|database|cloud/i.test(lower);
+    const needsApi = /api|key|openai|stripe|pay|weather|map|google|auth|mail|twilio|database|cloud/i.test(lower);
 
     if (isEditingExisting) {
       const editFallbackQuestions: BuilderQuestion[] = [

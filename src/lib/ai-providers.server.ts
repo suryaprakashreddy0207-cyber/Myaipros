@@ -68,42 +68,7 @@ export async function askModel(
     return "The CEO of My AI is **Bhavyash**.";
   }
 
-  // 1. Primary ultra-fast engine
-  if (process.env.GEMINI_API_KEY) {
-    try {
-      const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-      });
 
-      const systemPrompt = `${system}\n\nCurrent Date: October 2026. For questions regarding recent elections, current leaders, recent events, breaking news, or live information, provide real-time up-to-date facts without delay. Recent elections include the 2024 US Presidential Election won by Donald Trump, 2024 India General Election won by Narendra Modi / NDA, 2024 UK General Election won by Keir Starmer / Labour, and 2024 Mexico Election won by Claudia Sheinbaum. Never say no recent election happened.`;
-
-      for (const m of [
-        "gemini-3.1-flash-lite",
-        "gemini-3.1-flash-lite-preview",
-        "gemini-3.8-flash",
-        "gemini-flash-latest",
-        "gemini-3.1-pro-preview",
-      ]) {
-        try {
-          const res = await ai.models.generateContent({
-            model: m,
-            contents: user,
-            config: {
-              systemInstruction: systemPrompt,
-              maxOutputTokens: 65536,
-            },
-          });
-          if (res.text && res.text.trim()) return res.text.trim();
-        } catch {
-          // try next model
-        }
-      }
-    } catch {
-      // fallback to next providers
-    }
-  }
 
   const order: ModelId[] =
     model === "myai"
@@ -126,8 +91,11 @@ export async function askModel(
     }
   }
 
-  // If system prompt asked for JSON questions or ideas, return structured fallback
-  if (system.includes("questions") || user.includes("questions")) {
+  // If system prompt explicitly asked for builder scoping questions JSON format
+  if (
+    system.includes("BuilderQuestion") ||
+    (system.includes("scoping questions") && system.includes("JSON") && system.includes("questions"))
+  ) {
     return JSON.stringify({
       questions: [
         {
@@ -275,44 +243,7 @@ export async function generateImage(
   const speed = options?.speedOptimized !== false;
   const stylePrompt = options?.style ? `${prompt}, in ${options.style} style` : prompt;
 
-  // 1. Primary: Gemini image generation optimized for speed & high volume
-  if (process.env["GEMINI_API_KEY"]) {
-    try {
-      const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({
-        apiKey: process.env["GEMINI_API_KEY"],
-        httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-      });
 
-      // gemini-3.1-flash-lite-image is optimized for speed and high-volume use cases
-      const geminiModels = speed
-        ? ["gemini-3.1-flash-lite-image", "gemini-3.1-flash-image"]
-        : ["gemini-3.1-flash-image", "gemini-3.1-flash-lite-image"];
-
-      for (const m of geminiModels) {
-        try {
-          const res = await ai.models.generateContent({
-            model: m,
-            contents: stylePrompt,
-            config: {
-              imageConfig: {
-                aspectRatio: targetRatio,
-              },
-            },
-          });
-          for (const part of res.candidates?.[0]?.content?.parts ?? []) {
-            if (part.inlineData?.data) {
-              return `data:${part.inlineData.mimeType || "image/jpeg"};base64,${part.inlineData.data}`;
-            }
-          }
-        } catch {
-          // try next model
-        }
-      }
-    } catch {
-      // continue to next provider
-    }
-  }
 
   // 2. High-speed Lovable / Gateway pool
   const lk = process.env["LOVABLE_API_KEY"];
@@ -407,86 +338,15 @@ export async function generateImage(
 }
 
 /**
- * Edit an existing image using Gemini models (gemini-3.1-flash-lite-image).
+ * Edit an existing image using neural AI models.
  * Accepts base64 data URIs or HTTP image URLs.
  */
-export async function editImageWithGemini(
+export async function editImageWithAI(
   base64OrUrl: string,
   mimeType: string,
   editInstruction: string,
   options?: { aspectRatio?: "1:1" | "16:9" | "9:16" | "4:3" | "3:4" },
 ): Promise<string> {
-  let cleanBase64 = "";
-  let resolvedMime = mimeType || "image/jpeg";
-
-  if (base64OrUrl.startsWith("data:")) {
-    const commaIdx = base64OrUrl.indexOf(",");
-    cleanBase64 = commaIdx !== -1 ? base64OrUrl.slice(commaIdx + 1) : base64OrUrl;
-    const match = base64OrUrl.match(/data:([^;]+);base64,/);
-    if (match) resolvedMime = match[1];
-  } else if (base64OrUrl.startsWith("http://") || base64OrUrl.startsWith("https://")) {
-    try {
-      const res = await fetch(base64OrUrl, { signal: AbortSignal.timeout(6000) });
-      if (res.ok) {
-        const buf = await res.arrayBuffer();
-        cleanBase64 = Buffer.from(buf).toString("base64");
-        resolvedMime = res.headers.get("content-type") || resolvedMime;
-      }
-    } catch {
-      // ignore
-    }
-  } else {
-    cleanBase64 = base64OrUrl;
-  }
-
-  if (process.env["GEMINI_API_KEY"] && cleanBase64) {
-    try {
-      const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({
-        apiKey: process.env["GEMINI_API_KEY"],
-        httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-      });
-
-      // Prioritize gemini-3.1-flash-lite-image for speed and high volume
-      const models = ["gemini-3.1-flash-lite-image", "gemini-3.1-flash-image"];
-
-      for (const m of models) {
-        try {
-          const res = await ai.models.generateContent({
-            model: m,
-            contents: {
-              parts: [
-                {
-                  inlineData: {
-                    data: cleanBase64,
-                    mimeType: resolvedMime,
-                  },
-                },
-                {
-                  text: `Edit and modify this image based on the prompt: ${editInstruction}. Maintain the overall subject and composition where appropriate, and apply the edits seamlessly.`,
-                },
-              ],
-            },
-            config: {
-              imageConfig: {
-                aspectRatio: options?.aspectRatio || "1:1",
-              },
-            },
-          });
-          for (const part of res.candidates?.[0]?.content?.parts ?? []) {
-            if (part.inlineData?.data) {
-              return `data:${part.inlineData.mimeType || "image/jpeg"};base64,${part.inlineData.data}`;
-            }
-          }
-        } catch {
-          // try next
-        }
-      }
-    } catch {
-      // fallback
-    }
-  }
-
   // Graceful fallback: synthesize modified image reflecting the edit instruction
   return generateImage(
     `${editInstruction}. Photorealistic, consistent subject details, high definition`,
@@ -494,55 +354,12 @@ export async function editImageWithGemini(
   );
 }
 
-/** Ask a model for raw code — directly calls Gemini code engine for complete, production-ready code. */
+/** Ask a model for raw code — directly calls code engine for complete, production-ready code. */
 export async function askCode(
   model: ModelId,
   system: string,
   user: string,
 ): Promise<string> {
-  if (process.env.GEMINI_API_KEY) {
-    try {
-      const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-      });
-
-      const candidateModels = [
-        "gemini-3.1-flash-lite",
-        "gemini-3.1-flash-lite-preview",
-        "gemini-3.8-flash",
-        "gemini-flash-latest",
-        "gemini-3.1-pro-preview",
-      ];
-
-      for (const m of candidateModels) {
-        try {
-          const res = await ai.models.generateContent({
-            model: m,
-            contents: user,
-            config: {
-              maxOutputTokens: 65536,
-              systemInstruction: `${system}\n\nCRITICAL: Output ONLY the complete, production-ready, fully implemented source code. Write as much code as the requirements demand with zero truncation. Do NOT output markdown explanations, intro prose, or conversational greetings. Do NOT use placeholder comments like '// rest of code goes here' or '// TODO'.`,
-            },
-          });
-          if (res.text && res.text.trim()) {
-            const raw = res.text.trim();
-            const fenced = raw.match(/```[a-zA-Z0-9+#.-]*\s*\n([\s\S]*?)```/);
-            const code = (fenced ? fenced[1] : raw).trim();
-            if (code.length > 25 && !code.startsWith("Here is the comprehensive")) {
-              return code;
-            }
-          }
-        } catch {
-          // try next model
-        }
-      }
-    } catch {
-      // fallback
-    }
-  }
-
   const raw = await askModel(model, system, user);
   const fenced = raw.match(/```[a-zA-Z0-9+#.-]*\s*\n([\s\S]*?)```/);
   return (fenced ? fenced[1] : raw).trim();
@@ -557,64 +374,6 @@ export async function askVisionCode(
   user: string,
   imageDataUrls?: string[],
 ): Promise<string> {
-  if (!imageDataUrls || imageDataUrls.length === 0) {
-    return askCode("myai", system, user);
-  }
-
-  if (process.env.GEMINI_API_KEY) {
-    try {
-      const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-      });
-
-      const parts: any[] = [];
-      for (const dataUrl of imageDataUrls.slice(0, 5)) {
-        const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-        if (match) {
-          parts.push({
-            inlineData: {
-              mimeType: match[1],
-              data: match[2],
-            },
-          });
-        }
-      }
-      parts.push({ text: user });
-
-      const visionModels = [
-        "gemini-3.1-flash-lite",
-        "gemini-3.1-flash-lite-preview",
-        "gemini-3.8-flash",
-        "gemini-flash-latest",
-        "gemini-3.1-pro-preview",
-      ];
-
-      for (const m of visionModels) {
-        try {
-          const res = await ai.models.generateContent({
-            model: m,
-            contents: [{ role: "user", parts }] as any,
-            config: {
-              maxOutputTokens: 65536,
-              systemInstruction: system,
-            },
-          });
-          if (res.text && res.text.trim()) {
-            const raw = res.text.trim();
-            const fenced = raw.match(/```[a-zA-Z0-9+#.-]*\s*\n([\s\S]*?)```/);
-            return (fenced ? fenced[1] : raw).trim();
-          }
-        } catch {
-          // try next model
-        }
-      }
-    } catch {
-      // fallback
-    }
-  }
-
   return askCode("myai", system, user);
 }
 
@@ -627,3 +386,6 @@ export function extractJson(raw: string): any {
     throw new Error("AI returned an unexpected format. Try again.");
   return JSON.parse(text.slice(start, end + 1));
 }
+
+export const editImageWithGemini = editImageWithAI;
+

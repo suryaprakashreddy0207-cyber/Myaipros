@@ -94,8 +94,15 @@ You provide clear, accurate, insightful analysis, code writing, and direct answe
       }
     }
 
-    // 1. Fast & reliable Gemini generation
-    const models = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+    // 1. Fast & reliable AI generation
+    const models = [
+      "gemini-3.5-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-flash-latest",
+      "gemini-flash-lite-latest",
+      "gemini-3.7-flash",
+      "gemini-3.8-flash",
+    ];
     for (const model of models) {
       try {
         const res = await ai.models.generateContent({

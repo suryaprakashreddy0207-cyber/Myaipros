@@ -178,11 +178,14 @@ CRITICAL RULES:
 
     let assistantText = "";
 
-    // 4. Primary Gemini Model Pipeline (gemini-3.1-flash-lite for instant <400ms voice answers)
+    // 4. Primary Gemini Model Pipeline (gemini-3.5-flash-lite for ultra-fast <1s voice answers)
     const candidateModels = [
-      "gemini-3.1-flash-lite",
-      "gemini-3.8-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.5-flash",
+      "gemini-flash-lite-latest",
       "gemini-flash-latest",
+      "gemini-3.7-flash",
+      "gemini-3.8-flash",
     ];
 
     const promptText = prompt || (audioDataUrl ? "Please listen to my voice and respond conversationally." : "Hello, how can you help me today?");

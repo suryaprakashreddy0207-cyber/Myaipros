@@ -56,10 +56,11 @@ Strict rules:
 
           let transcript = "";
 
-          // Use valid Gemini models for accurate neural audio transcription
+          // Use valid neural AI models for accurate audio transcription
           const transcribeModels = [
-            "gemini-3.1-flash-lite",
             "gemini-3.5-transcribe",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
             "gemini-flash-latest",
           ];
           for (const model of transcribeModels) {

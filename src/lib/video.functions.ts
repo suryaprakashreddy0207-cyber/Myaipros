@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { askModel, extractJson, generateImage, editImageWithGemini } from "@/lib/ai-providers.server";
+import { askModel, extractJson, generateImage, editImageWithAI } from "@/lib/ai-providers.server";
 
 export type Scene = { caption: string; image_prompt: string };
 
@@ -66,7 +66,7 @@ export const editVideoFrame = createServerFn({ method: "POST" })
     const editInstruction = data.style
       ? `${data.edit_prompt}. Maintain cinematic style: ${data.style}`
       : data.edit_prompt;
-    const image_url = await editImageWithGemini(
+    const image_url = await editImageWithAI(
       data.image_url,
       "image/jpeg",
       editInstruction,
@@ -111,7 +111,7 @@ export const editStill = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const image_url = await editImageWithGemini(
+    const image_url = await editImageWithAI(
       data.image_url,
       "image/jpeg",
       data.edit_prompt,

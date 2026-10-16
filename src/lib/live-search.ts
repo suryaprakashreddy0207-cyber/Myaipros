@@ -308,8 +308,36 @@ export async function fetchLiveWeather(query: string): Promise<string | null> {
   const city = cityMatch && cityMatch[1] ? cityMatch[1].trim() : "New York";
 
   try {
+    const geoRes = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`,
+      { signal: AbortSignal.timeout(1800) },
+    );
+    if (geoRes.ok) {
+      const geoData: any = await geoRes.json();
+      const place = geoData.results?.[0];
+      if (place && place.latitude && place.longitude) {
+        const wRes = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m`,
+          { signal: AbortSignal.timeout(1800) },
+        );
+        if (wRes.ok) {
+          const wData: any = await wRes.json();
+          const curr = wData.current;
+          if (curr) {
+            const tempC = Math.round(curr.temperature_2m);
+            const tempF = Math.round((tempC * 9) / 5 + 32);
+            return `Live Weather for ${place.name}, ${place.country || ""}: ${tempC}°C (${tempF}°F), Humidity: ${curr.relative_humidity_2m}%, Wind: ${curr.wind_speed_10m} km/h`;
+          }
+        }
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  try {
     const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`, {
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(1500),
       headers: { "User-Agent": "curl/7.68.0" },
     });
     if (res.ok) {

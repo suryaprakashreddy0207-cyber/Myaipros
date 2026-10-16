@@ -289,7 +289,7 @@ export function VoiceAssistantPage() {
     mediaRecorderRef.current = null;
   }, []);
 
-  // Alternative Neural Speech-to-Text Service using Gemini
+  // Alternative Neural Speech-to-Text Service
   const triggerAlternativeTranscription = useCallback(async () => {
     if (recordedChunksRef.current.length === 0) return;
     if (stateRef.current === "thinking" || stateRef.current === "speaking") return;
@@ -1357,7 +1357,7 @@ export function VoiceAssistantPage() {
                   ))}
                 </div>
                 <p className="mt-1 text-[10px] text-neutral-500">
-                  Auto Hybrid combines real-time Web Speech with Gemini Neural AI fallback for 100% accuracy.
+                  Auto Hybrid combines real-time Web Speech with Neural AI fallback for 100% accuracy.
                 </p>
               </div>
 

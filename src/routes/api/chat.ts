@@ -71,7 +71,7 @@ async function extractInlineImagePart(att: Attachment) {
   };
 }
 
-/** Build robust, strictly alternating multiturn conversation turns for Gemini */
+/** Build robust, strictly alternating multiturn conversation turns */
 async function buildSanitizedMultiturnContents(
   rawMessages: { role: string; content?: string }[] | undefined,
   finalUserPrompt: string,
@@ -409,37 +409,41 @@ async function fetchLiveWebGrounding(query: string): Promise<string | null> {
   if (!cleanQuery || cleanQuery.length < 2) return null;
 
   try {
-    // 1. DuckDuckGo Instant Answer / Abstract
-    const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(cleanQuery)}&format=json&no_html=1&skip_disambig=1`;
-    const ddgRes = await fetch(ddgUrl, { signal: AbortSignal.timeout(3500) });
-    if (ddgRes.ok) {
-      const ddgData: any = await ddgRes.json();
-      if (ddgData.AbstractText) {
-        return `**${ddgData.Heading || cleanQuery}**\n\n${ddgData.AbstractText}`;
-      }
-    }
+    const ddgPromise = fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(cleanQuery)}&format=json&no_html=1&skip_disambig=1`,
+      { signal: AbortSignal.timeout(1500) },
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: any) =>
+        data?.AbstractText ? `**${data.Heading || cleanQuery}**\n\n${data.AbstractText}` : null,
+      )
+      .catch(() => null);
 
-    // 2. Wikipedia Search & Summary
-    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&format=json&origin=*&utf8=1`;
-    const searchRes = await fetch(searchUrl, { signal: AbortSignal.timeout(3500) });
-    if (searchRes.ok) {
-      const searchData: any = await searchRes.json();
-      const topTitle = searchData?.query?.search?.[0]?.title;
-      if (topTitle) {
-        const sumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topTitle)}`;
-        const sumRes = await fetch(sumUrl, { signal: AbortSignal.timeout(3500) });
+    const wikiPromise = fetch(
+      `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&format=json&origin=*&utf8=1`,
+      { signal: AbortSignal.timeout(1500) },
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then(async (searchData: any) => {
+        const topTitle = searchData?.query?.search?.[0]?.title;
+        if (!topTitle) return null;
+        const sumRes = await fetch(
+          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topTitle)}`,
+          { signal: AbortSignal.timeout(1200) },
+        );
         if (sumRes.ok) {
           const sumData: any = await sumRes.json();
-          if (sumData.extract) {
-            return `**${sumData.title}** (Wikipedia Summary):\n${sumData.extract}`;
-          }
+          if (sumData.extract) return `**${sumData.title}** (Wikipedia Summary):\n${sumData.extract}`;
         }
-      }
-    }
+        return null;
+      })
+      .catch(() => null);
+
+    const [ddgResult, wikiResult] = await Promise.all([ddgPromise, wikiPromise]);
+    return ddgResult || wikiResult || null;
   } catch {
-    // ignore
+    return null;
   }
-  return null;
 }
 
 /** Detect hardware / device action intent */
@@ -1209,11 +1213,12 @@ export const Route = createFileRoute("/api/chat")({
                   );
 
                   const codingModels = [
-                    "gemini-3.1-flash-lite",
-                    "gemini-3.1-flash-lite-preview",
-                    "gemini-3.8-flash",
+                    "gemini-3.5-flash-lite",
+                    "gemini-3.5-flash",
+                    "gemini-flash-lite-latest",
                     "gemini-flash-latest",
-                    "gemini-3.1-pro-preview",
+                    "gemini-3.7-flash",
+                    "gemini-3.8-flash",
                   ];
 
                   for (const modelName of codingModels) {
@@ -1261,7 +1266,7 @@ export const Route = createFileRoute("/api/chat")({
                   
                   // Run live web search for ANY informational or real-world question unless it's just a 1-word greeting
                   const isCasualGreeting = /^(hi|hello|hey|yo|greetings|thanks|thank you|ok|okay|bye)$/i.test(userText.trim());
-                  const isSearchNeeded = !hasAttachments && userText.trim().length > 1 && !isCasualGreeting;
+                  const isSearchNeeded = !hasAttachments && userText.trim().length > 2 && !isCasualGreeting;
 
                   // Parallel non-blocking lookups with timeouts
                   const [liveSports, liveFinancials, liveWeather, liveWiki, webImages] = await Promise.all([
@@ -1319,7 +1324,7 @@ export const Route = createFileRoute("/api/chat")({
                     ? `${userText}\n\n[REAL-TIME LIVE GOOGLE SEARCH RESULTS & CURRENT REAL-WORLD FACTS (OCTOBER 2026)]:\n${liveContext}\n\n(IMPORTANT INSTRUCTION: Use the above real-time Google search and live market results to answer the user's question accurately with 100% up-to-date facts, current exchange rates, and current leaders. Convert and synthesize this into your own natural, concise, direct answer as My AI.)`
                     : userText;
 
-                  // Build sanitized, strictly alternating multiturn contents for Gemini
+                  // Build sanitized, strictly alternating multiturn contents
                   const conversationContents = await buildSanitizedMultiturnContents(
                     body.messages,
                     promptWithLiveContext,
@@ -1328,11 +1333,12 @@ export const Route = createFileRoute("/api/chat")({
 
                   // Fast, reliable models pool with live search data embedded
                   const candidateModels = [
-                    "gemini-3.1-flash-lite",
-                    "gemini-3.1-flash-lite-preview",
-                    "gemini-3.8-flash",
+                    "gemini-3.5-flash-lite",
+                    "gemini-3.5-flash",
+                    "gemini-flash-lite-latest",
                     "gemini-flash-latest",
-                    "gemini-3.1-pro-preview",
+                    "gemini-3.7-flash",
+                    "gemini-3.8-flash",
                   ];
 
                   for (const modelName of candidateModels) {
@@ -1349,8 +1355,8 @@ export const Route = createFileRoute("/api/chat")({
                         assistantText = response.text.trim();
                         break;
                       }
-                    } catch {
-                      // Try next model
+                    } catch (err: any) {
+                      console.error("Gemini candidateModel error:", modelName, err?.message || err);
                     }
                   }
 
