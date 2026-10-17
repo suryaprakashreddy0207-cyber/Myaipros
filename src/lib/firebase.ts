@@ -16,4 +16,23 @@ export const db = (firebaseConfig as any).firestoreDatabaseId
   ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId)
   : getFirestore(app);
 
+import { GithubAuthProvider, signInWithPopup } from "firebase/auth";
+
+export const githubAuthProvider = new GithubAuthProvider();
+githubAuthProvider.addScope("repo");
+githubAuthProvider.addScope("read:user");
+
+/**
+ * Sign in with GitHub via Firebase Authentication.
+ * Retrieves the OAuth credential and access token for accessing private repositories.
+ */
+export async function signInWithGithubFirebase() {
+  const result = await signInWithPopup(auth, githubAuthProvider);
+  const credential = GithubAuthProvider.credentialFromResult(result);
+  const token = credential?.accessToken;
+  const user = result.user;
+  return { user, token, credential };
+}
+
+
 

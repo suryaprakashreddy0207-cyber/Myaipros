@@ -1432,19 +1432,30 @@ export const startBackgroundBuild = createServerFn({ method: "POST" })
 
     const hasExistingCode = Boolean(isEditingExisting);
 
+    const initialName = hasExistingCode
+      ? resolvedExistingName || "Current Application"
+      : idea
+          .replace(/^(build|create|make|design|develop|like|edit|update|integrate)\s+(a|an|the)?\s*/i, "")
+          .split(/[.,!?\n]/)[0]
+          .trim()
+          .split(/\s+/)
+          .slice(0, 3)
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(" ") || "Custom Application";
+
     const initialJob: BuildJob = {
       id: buildId,
       idea,
-      status: "planning",
-      name: hasExistingCode ? resolvedExistingName || "Current Application" : "Planning Project...",
+      status: "writing",
+      name: initialName,
       description: hasExistingCode
         ? resolvedExistingDesc || `Updating existing application with: ${idea.slice(0, 80)}`
-        : `Architecting custom application for: ${idea.slice(0, 80)}`,
+        : `Building custom application for: ${idea.slice(0, 80)}`,
       stack: existingStack || "React, TypeScript, Tailwind CSS",
       progress: [
         hasExistingCode
           ? `Analyzing existing "${resolvedExistingName || "app"}" codebase for in-place code edit…`
-          : "Scoping application architecture & planned files…",
+          : `Writing source code and modules for ${initialName}…`,
       ],
       totalFiles: hasExistingCode ? resolvedExistingFiles.length : 0,
       completedFiles: 0,

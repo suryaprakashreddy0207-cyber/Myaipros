@@ -9,11 +9,12 @@ import {
   ChevronLeft, Globe, Copy, ExternalLink, Key, Eye, EyeOff, Folder, Image as ImageIcon,
   Github, GitBranch, ThumbsUp, ThumbsDown, Link2, Pencil, MoreHorizontal, Square,
   Code2, MonitorPlay, Lock, Search, RefreshCw, Trash2, Settings, LayoutGrid, Telescope,
-  Presentation, Bot, MessageSquare, Blocks,
+  Presentation, Bot, MessageSquare, Blocks, CreditCard,
 } from "lucide-react";
 import amberWavesBg from "@/assets/images/amber_waves_bg_1791883311977.jpg";
 import amberGlassOrb from "@/assets/images/amber_glass_orb_1791883331076.jpg";
 import { TopTabs } from "@/components/top-tabs";
+import { getUserCredits, getActiveSubscription } from "@/lib/subscription";
 import {
   planQuestions,
   planProject,
@@ -32,8 +33,9 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { CodeExplorer } from "@/components/code-explorer";
 import { ProjectControlCenter } from "@/components/project-control-center";
+import { UpgradeModal } from "@/components/upgrade-modal";
 import { getActiveUserSession, getActiveUserStorageKey } from "@/lib/user-session";
-import { db } from "@/lib/firebase";
+import { db, signInWithGithubFirebase } from "@/lib/firebase";
 import { doc, setDoc } from "firebase/firestore";
 import { cn } from "@/lib/utils";
 
@@ -319,6 +321,9 @@ function BuildPage() {
   const suggestFn = useServerFn(suggestUpgrades);
 
   const [progress, setProgress] = useState<string[]>([]);
+  const [credits, setCredits] = useState<number>(() => getUserCredits());
+  const [activeSub, setActiveSub] = useState<any>(() => getActiveSubscription());
+  const [showUpgradeModal, setShowUpgradeModal] = useState<boolean>(() => !getActiveSubscription());
   const [name, setName] = useState("there");
   const [idea, setIdea] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1044,8 +1049,8 @@ function BuildPage() {
         files: existingFilesToEdit,
         idea: userVisiblePrompt,
         at: Date.now(),
-        status: "planning",
-        progress: ["Starting background build on cloud engine…", "Scoping application architecture & files…"],
+        status: "writing",
+        progress: ["Starting background build on cloud engine…", `Writing source code and modules for ${derivedName}…`],
         turns: nextTurns,
       };
       setHistory((prev) => {
@@ -1786,20 +1791,40 @@ function BuildPage() {
                   type="button"
                   onClick={async () => {
                     try {
-                      await supabase.auth.signInWithOAuth({
-                        provider: "github",
-                        options: {
-                          scopes: "repo read:user",
-                          redirectTo: window.location.href,
-                        },
-                      });
-                    } catch {
-                      toast.info("Use your GitHub Personal Access Token above to load private repos immediately.");
+                      toast.loading("Connecting to GitHub via Firebase Auth…", { id: "gh-auth" });
+                      const { user, token } = await signInWithGithubFirebase();
+                      toast.dismiss("gh-auth");
+                      if (token) {
+                        setGithubToken(token);
+                        localStorage.setItem("myaipro_github_token", token);
+                      }
+                      const ghLogin = (user as any)?.reloadUserInfo?.screenName || user?.displayName || user?.email?.split("@")[0] || "";
+                      if (ghLogin) {
+                        setGithubAccountLogin(ghLogin);
+                        localStorage.setItem("myaipro_github_user", ghLogin);
+                      }
+                      toast.success(`Connected as @${ghLogin || "GitHub User"}! Loading private repos…`);
+                      if (token) {
+                        loadMyGitHubAccountRepos(token);
+                      }
+                    } catch (err: any) {
+                      toast.dismiss("gh-auth");
+                      try {
+                        await supabase.auth.signInWithOAuth({
+                          provider: "github",
+                          options: {
+                            scopes: "repo read:user",
+                            redirectTo: window.location.href,
+                          },
+                        });
+                      } catch {
+                        toast.info("Tip: You can also paste your GitHub Personal Access Token above to load private repos immediately.");
+                      }
                     }
                   }}
-                  className="font-semibold text-zinc-800 underline hover:text-black"
+                  className="font-semibold text-zinc-800 underline hover:text-black cursor-pointer"
                 >
-                  Or Sign in via GitHub OAuth
+                  Sign in with GitHub (Firebase Auth)
                 </button>
               </div>
             </div>
@@ -2045,6 +2070,16 @@ function BuildPage() {
                   <div>
                     <div className="font-medium">AI Coworker</div>
                     <div className="text-[10px] text-zinc-400">Multi-threaded agent</div>
+                  </div>
+                </Link>
+                <Link
+                  to="/billing"
+                  className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs text-zinc-700 hover:bg-zinc-100 text-left"
+                >
+                  <CreditCard className="size-4 text-emerald-600" />
+                  <div>
+                    <div className="font-medium">Billing & Subscriptions</div>
+                    <div className="text-[10px] text-zinc-400">Razorpay plans (₹59 - ₹599)</div>
                   </div>
                 </Link>
               </div>
@@ -3170,91 +3205,7 @@ function BuildPage() {
     );
   }
 
-  /* ---------- Execution Plan View (Shown before writing code) ---------- */
-  if (executionPlan) {
-    return (
-      <div className="flex h-[100dvh] flex-col bg-canvas font-sans text-ink">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-black/5 px-4">
-          <button onClick={() => setExecutionPlan(null)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-ink">
-            <ArrowLeft className="size-4" /> Back to Questions
-          </button>
-          <span className="text-xs font-bold text-brand uppercase tracking-wider">
-            Architecture Plan Ready
-          </span>
-          <div className="w-14" />
-        </header>
 
-        <div className="flex-1 overflow-y-auto px-5 py-8">
-          <div className="mx-auto max-w-2xl space-y-6">
-            <div className="rounded-3xl border border-border bg-surface p-6 space-y-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] font-bold uppercase tracking-widest text-brand">Execution Plan</span>
-                  <h2 className="font-serif text-3xl font-normal text-ink mt-1">{executionPlan.name}</h2>
-                </div>
-                <div className="rounded-full bg-brand/10 text-brand px-4 py-1.5 text-xs font-semibold">
-                  {executionPlan.stack}
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                {executionPlan.description}
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-border bg-surface p-6 space-y-4 shadow-sm">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-ink flex items-center gap-2">
-                <Code2 className="size-4 text-brand" /> Planned Modules & Files ({executionPlan.files?.length || 0})
-              </h3>
-              <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
-                {(executionPlan.files || []).map((f: any, idx: number) => (
-                  <div key={idx} className="flex items-start justify-between gap-3 p-3 rounded-2xl bg-canvas border border-border/60">
-                    <div>
-                      <p className="text-xs font-mono font-bold text-ink">{f.path}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{f.purpose}</p>
-                    </div>
-                    <span className="text-[10px] uppercase font-bold text-brand bg-brand/10 px-2 py-0.5 rounded-full shrink-0">
-                      {f.language}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setExecutionPlan(null)}
-                className="rounded-2xl border border-border bg-surface px-5 py-3 text-xs font-semibold text-muted-foreground hover:text-ink transition"
-              >
-                Modify Answers
-              </button>
-              <button
-                type="button"
-                disabled={isBuilding}
-                onClick={() => {
-                  triggerBuild(
-                    idea,
-                    (questions ?? []).map((qItem, i) => ({ question: qItem.question, answer: answers[i] })),
-                  );
-                }}
-                className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-brand py-3.5 px-6 text-sm font-bold text-brand-foreground hover:opacity-90 transition shadow-md"
-              >
-                {isBuilding ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" /> Writing Production Code…
-                  </>
-                ) : (
-                  <>
-                    <Rocket className="size-4" /> Confirm Plan & Start Writing Code
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   /* ---------- Questions view ---------- */
   if (questions) {
@@ -3404,46 +3355,32 @@ function BuildPage() {
               </button>
             )}
             <button
-              disabled={!answers[step] || isBuilding || isGeneratingPlan}
-              onClick={async () => {
+              disabled={!answers[step] || isBuilding}
+              onClick={() => {
                 if (last) {
-                  setIsGeneratingPlan(true);
-                  try {
-                    const res = await planProjectFn({
-                      data: {
-                        idea,
-                        model,
-                        answers: questions.map((qItem, i) => ({ question: qItem.question, answer: answers[i] || qItem.options[0] })),
-                        apiKeys,
-                        githubContext: importedRepo ? `GitHub: ${importedRepo.owner}/${importedRepo.repo}` : undefined,
-                        folderContext: folderContext || undefined,
-                      },
-                    });
-                    if (res) {
-                      setExecutionPlan(res);
-                    }
-                  } catch {
-                    triggerBuild(
-                      idea,
-                      (questions ?? []).map((qItem, i) => ({ question: qItem.question, answer: answers[i] })),
-                    );
-                  } finally {
-                    setIsGeneratingPlan(false);
-                  }
+                  triggerBuild(
+                    idea,
+                    questions.map((qItem, i) => ({
+                      question: qItem.question,
+                      answer: answers[i] || qItem.options[0],
+                    })),
+                  );
                 } else {
                   setStep((s) => s + 1);
                 }
               }}
-              className="flex flex-1 items-center justify-center gap-2 rounded-full bg-brand py-3 text-sm font-semibold text-brand-foreground disabled:opacity-40 hover:opacity-90 transition"
+              className="flex flex-1 items-center justify-center gap-2 rounded-full bg-brand py-3 text-sm font-semibold text-brand-foreground disabled:opacity-40 hover:opacity-90 transition cursor-pointer"
             >
-              {isGeneratingPlan ? (
+              {isBuilding ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" /> Generating Architecture Plan…
+                  <Loader2 className="size-4 animate-spin" /> Writing Production Code…
                 </>
               ) : last ? (
-                "Review Architecture & Plan"
+                <>
+                  <Rocket className="size-4" /> Start Writing Code & Build App
+                </>
               ) : (
-                "Next"
+                "Next Step"
               )}
             </button>
           </div>
@@ -3518,6 +3455,22 @@ function BuildPage() {
           </Link>
         </div>
       </div>
+
+      {/* Automatic upgrade banner for free users */}
+      {!activeSub && (
+        <div className="mx-auto my-1.5 w-full max-w-xl rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 flex items-center justify-between gap-3 text-xs shadow-xs animate-in fade-in shrink-0 z-15">
+          <div className="flex items-center gap-2 text-amber-900 font-medium">
+            <Sparkles className="size-4 shrink-0 text-amber-600 animate-pulse" />
+            <span>Free Tier ({credits} credits left) — <strong>Please upgrade for pro.</strong></span>
+          </div>
+          <Link
+            to="/billing"
+            className="rounded-full bg-amber-600 px-3.5 py-1.5 font-bold text-white hover:bg-amber-700 transition shrink-0 shadow-xs"
+          >
+            Upgrade Plans (₹59+)
+          </Link>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <div className="relative z-10 flex-1 overflow-y-auto px-5 flex flex-col">
@@ -3716,8 +3669,10 @@ function BuildPage() {
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if (idea.trim() && !plan.isPending) {
-                  plan.mutate(idea.trim());
+                if (idea.trim() && !isBuilding) {
+                  const toBuild = idea.trim();
+                  setIdea("");
+                  triggerBuild(toBuild, []);
                 }
               }
             }}
@@ -3751,13 +3706,19 @@ function BuildPage() {
           {/* Send Button */}
           <button
             type="button"
-            onClick={() => idea.trim() && plan.mutate(idea.trim())}
-            disabled={!idea.trim() || plan.isPending}
-            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-md hover:bg-black active:scale-95 transition disabled:opacity-40 disabled:hover:scale-100 disabled:shadow-none"
+            onClick={() => {
+              if (idea.trim() && !isBuilding) {
+                const toBuild = idea.trim();
+                setIdea("");
+                triggerBuild(toBuild, []);
+              }
+            }}
+            disabled={!idea.trim() || isBuilding}
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-md hover:bg-black active:scale-95 transition disabled:opacity-40 disabled:hover:scale-100 disabled:shadow-none cursor-pointer"
             aria-label="Start building"
-            title="Start building"
+            title="Start building and writing code"
           >
-            {plan.isPending ? (
+            {isBuilding ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
               <Send className="size-4 -rotate-12 translate-x-px" />
@@ -3765,6 +3726,16 @@ function BuildPage() {
           </button>
         </div>
       </footer>
+
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        onSuccess={() => {
+          setActiveSub(getActiveSubscription());
+          setCredits(getUserCredits());
+          setShowUpgradeModal(false);
+        }}
+      />
     </div>
   );
 }

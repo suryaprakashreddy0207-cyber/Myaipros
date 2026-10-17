@@ -243,6 +243,8 @@ export const generatePresentation = createServerFn({ method: "POST" })
       .object({
         topic: z.string().trim().min(3).max(500),
         slideCount: z.number().int().min(4).max(15).default(8),
+        style: z.string().optional(),
+        includeImages: z.boolean().optional(),
       })
       .parse(d),
   )
@@ -250,38 +252,75 @@ export const generatePresentation = createServerFn({ method: "POST" })
     let title = data.topic;
     let slides: Slide[] = [];
 
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        const { GoogleGenAI } = await import("@google/genai");
-        const ai = new GoogleGenAI({
-          apiKey: process.env.GEMINI_API_KEY,
-          httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-        });
-        const prompt = `Create a professional presentation slide deck about: "${data.topic}". Produce EXACTLY ${data.slideCount} slides in valid JSON: {"title":"...","slides":[{"title":"...","bullets":["...","...","..."],"notes":"..."}]}`;
-        for (const m of ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-3.8-flash"]) {
-          try {
-            const res = await ai.models.generateContent({
-              model: m,
-              contents: prompt,
-              config: { responseMimeType: "application/json" },
-            });
-            const parsed = JSON.parse(res.text || "{}");
-            if (parsed.title) title = parsed.title;
-            if (Array.isArray(parsed.slides) && parsed.slides.length > 0) {
-              slides = parsed.slides;
-              break;
-            }
-          } catch {
-            // try next model
-          }
+    const isGhibliRequested =
+      /ghibli|miyazaki|anime|watercolor/i.test(data.topic) ||
+      data.style === "ghibli";
+    const isImagesRequested =
+      isGhibliRequested ||
+      /image|picture|photo|visual|illustration|graphic/i.test(data.topic) ||
+      Boolean(data.includeImages);
+
+    try {
+      const { askModel } = await import("@/lib/ai-providers.server");
+      const systemPrompt = `You are a world-class presentation designer crafting exceptional, executive-quality slide decks. Produce EXACTLY ${data.slideCount} slides in valid JSON format:
+{
+  "title": "Clean concise presentation title",
+  "slides": [
+    {
+      "title": "Slide Title",
+      "bullets": [
+        "**Key Insight 1**: Compelling detail, metric, or strategic driver",
+        "**Key Insight 2**: Actionable execution principle",
+        "**Key Insight 3**: High-impact takeaway"
+      ],
+      "notes": "Natural presenter speaker notes."
+    }
+  ]
+}
+Return ONLY valid JSON. No markdown code fences.`;
+
+      const raw = await askModel(
+        "myai",
+        systemPrompt,
+        `Create a high-impact, professional presentation deck about: "${data.topic}". Ensure compelling content, clear structure, and crisp bullet points.`
+      );
+      const start = raw.indexOf("{");
+      const end = raw.lastIndexOf("}");
+      if (start !== -1 && end !== -1) {
+        const parsed = JSON.parse(raw.slice(start, end + 1));
+        if (parsed.title) title = parsed.title;
+        if (Array.isArray(parsed.slides) && parsed.slides.length > 0) {
+          slides = parsed.slides;
         }
-      } catch (err) {
-        console.warn("AI slide generation notice:", err);
       }
+    } catch (err) {
+      console.warn("AI slide generation notice:", err);
     }
 
     if (slides.length === 0) {
       slides = createStructuredSlides(data.topic, data.slideCount);
+    }
+
+    // Attach high-quality images if requested or if Ghibli style
+    if (isImagesRequested) {
+      const imageCount = Math.min(slides.length, 6);
+      await Promise.all(
+        slides.slice(0, imageCount).map(async (slide) => {
+          try {
+            const prompt = isGhibliRequested
+              ? `${slide.title}. In Hayao Miyazaki Studio Ghibli watercolor anime art style, lush scenery, whimsical, painterly aesthetic, cinematic, 16:9, masterwork.`
+              : `${slide.title}, ${data.topic}. Professional modern presentation illustration, clean cinematic lighting, 16:9, digital art.`;
+            const imgUrl = await generateImage(prompt, { speedOptimized: true, aspectRatio: "16:9" });
+            if (imgUrl) {
+              slide.image_url = imgUrl;
+            }
+          } catch {
+            slide.image_url = isGhibliRequested
+              ? "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?q=80&w=1080&auto=format&fit=crop"
+              : "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=1080&auto=format&fit=crop";
+          }
+        })
+      );
     }
 
     const deckId = crypto.randomUUID();

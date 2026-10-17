@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   listPresentations,
   generatePresentation,
@@ -23,6 +23,8 @@ import {
   Play,
   Share2,
   FileSpreadsheet,
+  Palette,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -54,6 +56,27 @@ type Preview = {
   slides: { title: string; bullets: string[]; image_url?: string }[];
 };
 
+const SAVED_DECKS_STORAGE_KEY = "myaipro_saved_presentations";
+
+function loadLocalDecks(): any[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(SAVED_DECKS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalDecks(list: any[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(SAVED_DECKS_STORAGE_KEY, JSON.stringify(list));
+  } catch {
+    /* ignore */
+  }
+}
+
 function PresentationsPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
@@ -63,17 +86,58 @@ function PresentationsPage() {
 
   const [topic, setTopic] = useState("");
   const [count, setCount] = useState(8);
+  const [ghibliStyle, setGhibliStyle] = useState(false);
+  const [includeImages, setIncludeImages] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [refs, setRefs] = useState<string[]>([]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [generating, setGenerating] = useState(false);
   const [genProgress, setGenProgress] = useState(0);
   const [genStage, setGenStage] = useState("");
+  const [localDecks, setLocalDecks] = useState<any[]>([]);
 
-  const { data: decks = [] } = useQuery({
+  useEffect(() => {
+    setLocalDecks(loadLocalDecks());
+  }, []);
+
+  const { data: serverDecks = [] } = useQuery({
     queryKey: ["presentations"],
     queryFn: () => listFn(),
   });
+
+  // Sync server decks into local cache so decks NEVER disappear across page switches
+  useEffect(() => {
+    if (serverDecks && serverDecks.length > 0) {
+      setLocalDecks((prev) => {
+        const map = new Map<string, any>();
+        for (const d of prev) {
+          if (d?.id) map.set(d.id, d);
+        }
+        for (const d of serverDecks) {
+          if (d?.id) map.set(d.id, d);
+        }
+        const merged = Array.from(map.values()).sort(
+          (a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime(),
+        );
+        saveLocalDecks(merged);
+        return merged;
+      });
+    }
+  }, [serverDecks]);
+
+  // Combined decks ensures instant persistent display below
+  const decks = (() => {
+    const map = new Map<string, any>();
+    for (const d of localDecks) {
+      if (d?.id) map.set(d.id, d);
+    }
+    for (const d of serverDecks) {
+      if (d?.id) map.set(d.id, d);
+    }
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime(),
+    );
+  })();
 
   const gen = useMutation({
     mutationFn: async () => {
@@ -82,27 +146,39 @@ function PresentationsPage() {
       setGenStage("Researching topic & structuring slide narrative…");
 
       const startTime = Date.now();
-      const targetDuration = 24000;
+      const targetDuration = 18000;
 
       const interval = setInterval(() => {
         const elapsed = Date.now() - startTime;
         const pct = Math.min(95, Math.floor((elapsed / targetDuration) * 95));
         setGenProgress(pct);
 
-        if (elapsed < 8000) {
+        if (elapsed < 6000) {
           setGenStage("Researching key facts & outlining slide flow (1/4)…");
-        } else if (elapsed < 16000) {
+        } else if (elapsed < 12000) {
           setGenStage("Synthesizing content & crafting punchy bullet points (2/4)…");
-        } else if (elapsed < 22000) {
-          setGenStage("Designing visual templates, contrast & layout typography (3/4)…");
+        } else if (elapsed < 16000) {
+          setGenStage(
+            ghibliStyle
+              ? "Generating Studio Ghibli artwork & watercolor anime aesthetics (3/4)…"
+              : "Designing visual templates, contrast & layout typography (3/4)…",
+          );
         } else {
           setGenStage("Polishing slide decks for Canva-style editing (4/4)…");
         }
-      }, 600);
+      }, 500);
 
       try {
+        const isGhibli = ghibliStyle || /ghibli|miyazaki|anime|watercolor/i.test(topic);
         const [res] = await Promise.all([
-          genFn({ data: { topic: topic.trim(), slideCount: count } }),
+          genFn({
+            data: {
+              topic: topic.trim(),
+              slideCount: count,
+              style: isGhibli ? "ghibli" : undefined,
+              includeImages: includeImages || isGhibli,
+            },
+          }),
           new Promise((resolve) => setTimeout(resolve, targetDuration)),
         ]);
         clearInterval(interval);
@@ -119,6 +195,20 @@ function PresentationsPage() {
     onSuccess: (d: any) => {
       toast.success("Presentation generated successfully!");
       qc.invalidateQueries({ queryKey: ["presentations"] });
+      const newDeckRecord = {
+        id: d.id,
+        title: d.title ?? topic,
+        topic: topic.trim(),
+        slides: d.slides ?? [],
+        slideCount: (d.slides ?? []).length,
+        cover: d.slides?.[0]?.image_url ?? null,
+        updated_at: new Date().toISOString(),
+      };
+      setLocalDecks((prev) => {
+        const next = [newDeckRecord, ...prev.filter((p) => p.id !== d.id)];
+        saveLocalDecks(next);
+        return next;
+      });
       setPreview({ id: d.id, title: d.title ?? topic, slides: d.slides ?? [] });
       setTopic("");
       setRefs([]);
@@ -127,7 +217,14 @@ function PresentationsPage() {
   });
 
   const del = useMutation({
-    mutationFn: (id: string) => delFn({ data: { id } }),
+    mutationFn: (id: string) => {
+      setLocalDecks((prev) => {
+        const next = prev.filter((p) => p.id !== id);
+        saveLocalDecks(next);
+        return next;
+      });
+      return delFn({ data: { id } });
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["presentations"] }),
   });
 
@@ -221,6 +318,48 @@ function PresentationsPage() {
               </div>
             )}
 
+            {/* Style toggles: Studio Ghibli & Topic Images */}
+            <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-border/40">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !ghibliStyle;
+                  setGhibliStyle(next);
+                  if (next) setIncludeImages(true);
+                  toast.info(next ? "Studio Ghibli aesthetic images enabled for slides!" : "Ghibli style disabled.");
+                }}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition border cursor-pointer",
+                  ghibliStyle || /ghibli|miyazaki|anime|watercolor/i.test(topic)
+                    ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                    : "border-border/80 bg-surface text-muted-foreground hover:text-ink",
+                )}
+              >
+                <Palette className="size-3.5" />
+                <span>Studio Ghibli Images</span>
+                {(ghibliStyle || /ghibli|miyazaki|anime|watercolor/i.test(topic)) && <Check className="size-3" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !includeImages;
+                  setIncludeImages(next);
+                  toast.info(next ? "Custom AI topic illustrations enabled!" : "Images disabled.");
+                }}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition border cursor-pointer",
+                  includeImages || /image|picture|photo|illustration/i.test(topic)
+                    ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                    : "border-border/80 bg-surface text-muted-foreground hover:text-ink",
+                )}
+              >
+                <ImageIcon className="size-3.5" />
+                <span>Add Topic Images</span>
+                {(includeImages || /image|picture|photo|illustration/i.test(topic)) && <Check className="size-3" />}
+              </button>
+            </div>
+
             <div className="mt-3 flex items-center justify-between border-t border-border/40 pt-3">
               <div className="flex items-center gap-3">
                 <label className="flex cursor-pointer items-center gap-1.5 rounded-full border border-border/80 px-3 py-1 text-xs font-medium text-muted-foreground hover:text-ink">
@@ -254,7 +393,7 @@ function PresentationsPage() {
               <button
                 onClick={() => gen.mutate()}
                 disabled={gen.isPending || topic.trim().length < 3}
-                className="flex items-center gap-2 rounded-full bg-brand px-5 py-2 text-xs font-bold text-brand-foreground shadow hover:opacity-90 disabled:opacity-40 transition"
+                className="flex items-center gap-2 rounded-full bg-brand px-5 py-2 text-xs font-bold text-brand-foreground shadow hover:opacity-90 disabled:opacity-40 transition cursor-pointer"
               >
                 {gen.isPending ? (
                   <Loader2 className="size-3.5 animate-spin" />
@@ -264,6 +403,32 @@ function PresentationsPage() {
                 <span>{gen.isPending ? "Generating…" : "Generate Deck"}</span>
               </button>
             </div>
+          </div>
+
+          {/* Quick Examples */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-[11px] text-muted-foreground">Try asking:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setTopic("Could you please add Ghibli images about this topic: Future of Artificial Intelligence and Human Civilization");
+                setGhibliStyle(true);
+                setIncludeImages(true);
+              }}
+              className="rounded-full bg-surface border border-border/60 px-2.5 py-1 text-[11px] text-muted-foreground hover:text-ink hover:border-brand/40 transition cursor-pointer"
+            >
+              🌸 "Add Ghibli images about AI Future"
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTopic("Could you please add images of this topic: Modern Renewable Energy and Green Cities 2026");
+                setIncludeImages(true);
+              }}
+              className="rounded-full bg-surface border border-border/60 px-2.5 py-1 text-[11px] text-muted-foreground hover:text-ink hover:border-brand/40 transition cursor-pointer"
+            >
+              🖼️ "Add images of Renewable Energy"
+            </button>
           </div>
 
           {/* Generation Progress Indicator */}

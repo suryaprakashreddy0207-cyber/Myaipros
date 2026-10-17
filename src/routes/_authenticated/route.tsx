@@ -34,7 +34,7 @@ function ProtectedContent() {
   }, [mounted, loading, isAuthenticated, session, navigate, location]);
 
   // While checking auth on initial mount without local session, display clean loading state
-  const hasLocalSession = typeof window !== "undefined" && Boolean(getActiveUserSession() || auth.currentUser);
+  const hasLocalSession = mounted && typeof window !== "undefined" && Boolean(getActiveUserSession() || auth.currentUser);
 
   if (loading && !hasLocalSession) {
     return (
